@@ -1,7 +1,5 @@
-# chiax-blockchain
-名称：ChiaX
+# ChiaX
 
-英文缩写：CHIAX
 
 区块时间：≈18.75秒
 

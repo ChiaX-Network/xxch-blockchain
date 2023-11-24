@@ -1,6 +1,6 @@
-[submodule "chiax-blockchain-gui"]
-	path = chiax-blockchain-gui
-	url = https://github.com/ChiaX-Network/chiax-blockchain-gui.git
+[submodule "xxch-blockchain-gui"]
+	path = xxch-blockchain-gui
+	url = https://github.com/ChiaX-Network/xxch-blockchain-gui.git
 	branch = main
 [submodule "mozilla-ca"]
 	path = mozilla-ca

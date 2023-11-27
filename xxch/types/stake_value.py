@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List
+
+from xxch.consensus.block_rewards import MOJO_PER_XXCH
+from xxch.util.ints import uint16, uint64
+from xxch.util.streamable import Streamable, streamable
+
+STAKE_PER_COEFFICIENT = 10 ** 17
+
+STAKE_FARM_COUNT = 32
+STAKE_FARM_MIN = 100 * MOJO_PER_XXCH
+STAKE_FARM_PREFIX = "dpos"
+
+STAKE_LOCK_MIN = 100 * MOJO_PER_XXCH
+
+
+@streamable
+@dataclass(frozen=True)
+class StakeValue(Streamable):
+    time_lock: uint64
+    coefficient: str
+
+    def reward_amount(self, amount: uint64) -> int:
+        return int(int(amount) * float(self.coefficient) * MOJO_PER_XXCH)
+
+
+STAKE_FARM_LIST: List[StakeValue] = [
+    StakeValue(86400 * 3, "1.0"),
+    StakeValue(86400 * 30, "1.2"),
+    StakeValue(86400 * 90, "1.4"),
+    StakeValue(86400 * 180, "1.6"),
+    StakeValue(86400 * 365, "2.0"),
+]
+
+
+STAKE_LOCK_LIST: List[StakeValue] = [
+    StakeValue(86400 * 3, "0.0002"),
+    StakeValue(86400 * 30, "0.00025"),
+    StakeValue(86400 * 90, "0.0003"),
+    StakeValue(86400 * 180, "0.0004"),
+    StakeValue(86400 * 365, "0.0005"),
+    StakeValue(86400 * 1825, "0.00055"),
+    StakeValue(86400 * 3650, "0.0006"),
+    StakeValue(86400 * 7300, "0.00065"),
+    StakeValue(86400 * 10950, "0.0007"),
+]
+
+
+def get_stake_value(stake_type: uint16, is_stake_farm: bool) -> StakeValue:
+    value = STAKE_FARM_LIST if is_stake_farm else STAKE_LOCK_LIST
+
+    if 0 <= stake_type < len(value):
+        return value[stake_type]
+    return StakeValue(0, "0")

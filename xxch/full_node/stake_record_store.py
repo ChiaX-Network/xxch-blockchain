@@ -140,17 +140,16 @@ class StakeRecordStore:
 
     async def get_stake_farm_count(self, stake_puzzle_hash: bytes32, timestamp: uint64) -> int:
         async with self.db_wrapper.reader_no_transaction() as conn:
-            async with conn.execute(
-                "SELECT SUM(1) FROM stake_record INDEXED BY stake_puzzle_hash"
-                " WHERE is_stake_farm=1 AND stake_puzzle_hash=? AND expiration>? GROUP BY puzzle_hash",
-                (stake_puzzle_hash, timestamp),
-            ) as cursor:
-                row = await cursor.fetchone()
-
-            if row is not None:
-                [count] = row
-                return int(count)
+            rows = list(
+                await conn.execute_fetchall(
+                    "SELECT puzzle_hash FROM stake_record INDEXED BY stake_puzzle_hash"
+                    " WHERE is_stake_farm=1 AND stake_puzzle_hash=? AND expiration>? GROUP BY puzzle_hash",
+                    (stake_puzzle_hash, timestamp),
+                )
+            )
+        if len(rows) == 0 or rows[0][0] is None:
             return 0
+        return len(rows)
     #
     # async def get_stake_amount_sum(self, timestamp: uint64, is_stake_farm: bool) -> Tuple[int, float, int]:
     #     async with self.db_wrapper.reader_no_transaction() as conn:

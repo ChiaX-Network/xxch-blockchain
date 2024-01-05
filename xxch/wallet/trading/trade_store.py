@@ -85,7 +85,7 @@ class TradeStore:
 
     @classmethod
     async def create(
-        cls, db_wrapper: DBWrapper2, cache_size: uint32 = uint32(600000), name: Optional[str] = None
+            cls, db_wrapper: DBWrapper2, cache_size: uint32 = uint32(600000), name: Optional[str] = None
     ) -> "TradeStore":
         self = cls()
 
@@ -212,7 +212,7 @@ class TradeStore:
             )
 
     async def set_status(
-        self, trade_id: bytes32, status: TradeStatus, offer_name: bytes32 = None, index: uint32 = uint32(0)
+            self, trade_id: bytes32, status: TradeStatus, offer_name: bytes32 = None, index: uint32 = uint32(0)
     ) -> None:
         """
         Updates the status of the trade
@@ -245,7 +245,7 @@ class TradeStore:
         await self.add_trade_record(tx, offer_name)
 
     async def increment_sent(
-        self, id: bytes32, name: str, send_status: MempoolInclusionStatus, err: Optional[Err]
+            self, id: bytes32, name: str, send_status: MempoolInclusionStatus, err: Optional[Err]
     ) -> bool:
         """
         Updates trade sent count (Full Node has received spend_bundle and sent ack).
@@ -363,15 +363,15 @@ class TradeStore:
         return await self._get_new_trade_records_from_old([TradeRecordOld.from_bytes(row[0]) for row in rows])
 
     async def get_trades_between(
-        self,
-        start: int,
-        end: int,
-        *,
-        sort_key: Optional[str] = None,
-        reverse: bool = False,
-        exclude_my_offers: bool = False,
-        exclude_taken_offers: bool = False,
-        include_completed: bool = False,
+            self,
+            start: int,
+            end: int,
+            *,
+            sort_key: Optional[str] = None,
+            reverse: bool = False,
+            exclude_my_offers: bool = False,
+            exclude_taken_offers: bool = False,
+            include_completed: bool = False,
     ) -> List[TradeRecord]:
         """
         Return a list of trades sorted by a key and between a start and end index.
@@ -475,13 +475,13 @@ class TradeStore:
         async with self.db_wrapper.reader_no_transaction() as conn:
             valid_times: Dict[bytes32, ConditionValidTimes] = {}
             chunked_records: List[List[TradeRecordOld]] = [
-                old_records[i : min(len(old_records), i + self.db_wrapper.host_parameter_limit)]
+                old_records[i: min(len(old_records), i + self.db_wrapper.host_parameter_limit)]
                 for i in range(0, len(old_records), self.db_wrapper.host_parameter_limit)
             ]
             for records_chunk in chunked_records:
                 cursor = await conn.execute(
                     "SELECT trade_id, valid_times from trade_record_times WHERE "
-                    f"trade_id IN ({','.join('?' *  len(records_chunk))})",
+                    f"trade_id IN ({','.join('?' * len(records_chunk))})",
                     tuple(trade.trade_id for trade in records_chunk),
                 )
                 valid_times = {

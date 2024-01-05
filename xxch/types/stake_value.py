@@ -9,7 +9,7 @@ from xxch.util.streamable import Streamable, streamable
 
 STAKE_PER_COEFFICIENT = 10 ** 17
 
-STAKE_FARM_COUNT = 32
+STAKE_FARM_COUNT = 128
 STAKE_FARM_MIN = 100 * MOJO_PER_XXCH
 STAKE_FARM_PREFIX = "dpos"
 
@@ -41,9 +41,12 @@ STAKE_LOCK_LIST: List[StakeValue] = [
     StakeValue(86400 * 90, "0.0003"),
     StakeValue(86400 * 180, "0.0004"),
     StakeValue(86400 * 365, "0.0005"),
+    StakeValue(86400 * 730, "0.00053"),
+    StakeValue(86400 * 1095, "0.00055"),
+    StakeValue(86400 * 1825, "0.00058"),
     StakeValue(86400 * 1825, "0.00055"),
-    StakeValue(86400 * 3650, "0.0006"),
-    StakeValue(86400 * 7300, "0.00065"),
+    StakeValue(86400 * 3650, "0.00062"),
+    StakeValue(86400 * 7300, "0.00066"),
     StakeValue(86400 * 10950, "0.0007"),
 ]
 

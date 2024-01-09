@@ -119,7 +119,7 @@ kwargs = dict(
         "xxch.ssl": ["xxch_ca.crt", "xxch_ca.key", "dst_root_ca.pem"],
         "mozilla-ca": ["cacert.pem"],
     },
-    long_description=open("README.md").read(),
+    long_description=open("README.md", 'r', encoding='UTF-8').read(),
     long_description_content_type="text/markdown",
     zip_safe=False,
     project_urls={

@@ -62,7 +62,7 @@ from xxch.data_layer.download_data import (
 from xxch.rpc.rpc_server import StateChangedProtocol, default_get_connections
 from xxch.rpc.wallet_rpc_client import WalletRpcClient
 from xxch.server.outbound_message import NodeType
-from xxch.server.server import xxchServer
+from xxch.server.server import XxchServer
 from xxch.server.ws_connection import WSXxchConnection
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.util.ints import uint32, uint64

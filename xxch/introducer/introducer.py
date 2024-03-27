@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Opti
 from xxch.rpc.rpc_server import StateChangedProtocol, default_get_connections
 from xxch.server.introducer_peers import VettedPeer
 from xxch.server.outbound_message import NodeType
-from xxch.server.server import xxchServer
+from xxch.server.server import XxchServer
 from xxch.server.ws_connection import WSXxchConnection
 from xxch.util.ints import uint64
 
@@ -21,7 +21,7 @@ class Introducer:
         _protocol_check: ClassVar[RpcServiceProtocol] = cast("Introducer", None)
 
     @property
-    def server(self) -> xxchServer:
+    def server(self) -> XxchServer:
         # This is a stop gap until the class usage is refactored such the values of
         # integral attributes are known at creation of the instance.
         if self._server is None:
@@ -33,7 +33,7 @@ class Introducer:
         self.max_peers_to_send = max_peers_to_send
         self.recent_peer_threshold = recent_peer_threshold
         self._shut_down = False
-        self._server: Optional[xxchServer] = None
+        self._server: Optional[XxchServer] = None
         self.log = logging.getLogger(__name__)
 
     @contextlib.asynccontextmanager
@@ -56,7 +56,7 @@ class Introducer:
     def get_connections(self, request_node_type: Optional[NodeType]) -> List[Dict[str, Any]]:
         return default_get_connections(server=self.server, request_node_type=request_node_type)
 
-    def set_server(self, server: xxchServer):
+    def set_server(self, server: XxchServer):
         self._server = server
 
     async def _vetting_loop(self):

@@ -205,7 +205,7 @@ async def validate_block_body(
                 expected_reward_coins.add(
                     create_community_coin(
                         prev_transaction_block_height,
-                        prev_transaction_block.community_puzzle_hash,
+                        constants.GENESIS_COMMUNITY_PUZZLE_HASH,
                         calculate_community_reward(prev_transaction_block_height),
                         constants.GENESIS_CHALLENGE,
                     )
@@ -221,7 +221,7 @@ async def validate_block_body(
             expected_reward_coins.add(
                 create_community_coin(
                     prev_transaction_block_height,
-                    prev_transaction_block.community_puzzle_hash,
+                    constants.GENESIS_COMMUNITY_PUZZLE_HASH,
                     calculate_community_reward(prev_transaction_block_height),
                     constants.GENESIS_CHALLENGE,
                 )
@@ -266,7 +266,7 @@ async def validate_block_body(
                         expected_reward_coins.add(
                             create_community_coin(
                                 curr_b.height,
-                                curr_b.community_puzzle_hash,
+                                constants.GENESIS_COMMUNITY_PUZZLE_HASH,
                                 calculate_community_reward(curr_b.height),
                                 constants.GENESIS_CHALLENGE,
                             )
@@ -275,7 +275,7 @@ async def validate_block_body(
                     expected_reward_coins.add(
                         create_community_coin(
                             curr_b.height,
-                            curr_b.community_puzzle_hash,
+                            constants.GENESIS_COMMUNITY_PUZZLE_HASH,
                             calculate_community_reward(curr_b.height),
                             constants.GENESIS_CHALLENGE,
                         )

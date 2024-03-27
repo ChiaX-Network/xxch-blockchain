@@ -405,8 +405,6 @@ def xxch_init(
     else:
         config = load_config(root_path, "config.yaml")["full_node"]
         db_path_replaced = config["database_path"].replace("CHALLENGE", config["selected_network"])
-        if "v2_r1" not in db_path_replaced:
-            db_path_replaced = db_path_replaced.replace("v2", "v2_r1")
         db_path = path_from_root(root_path, db_path_replaced)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         try:

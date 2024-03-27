@@ -193,10 +193,6 @@ class FullNode:
         # NOTE: async to force the queue creation to occur when an event loop is available
         db_path_replaced: str = config["database_path"].replace("CHALLENGE", config["selected_network"])
 
-        # "v2_r1" is the current fullnode db version identifier
-        if "v2_r1" not in db_path_replaced:
-            db_path_replaced = db_path_replaced.replace("v2", "v2_r1")
-
         db_path = path_from_root(root_path, db_path_replaced)
         db_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -9,7 +9,8 @@ from pathlib import Path
 from time import time
 from typing import Any, Dict, Optional
 
-from xxch.consensus.block_record import block_record_to_block_record
+from xxch.consensus.block_record import BlockRecord
+from xxch.consensus.coinbase import create_puzzlehash_for_pk
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.util.config import load_config, lock_and_load_config, save_config
 from xxch.util.ints import uint32
@@ -44,7 +45,7 @@ def db_upgrade_func(
         in_db_path = path_from_root(root_path, db_path_replaced)
 
     if out_db_path is None:
-        db_path_replaced = db_pattern.replace("CHALLENGE", selected_network).replace("_v2_", "_v2_r1_")
+        db_path_replaced = db_pattern.replace("CHALLENGE", selected_network).replace("_v1_", "_v2_")
         out_db_path = path_from_root(root_path, db_path_replaced)
         out_db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -68,12 +69,12 @@ def db_upgrade_func(
             return
 
     try:
-        convert_v2_to_v2_r1(in_db_path, out_db_path)
+        convert_v1_to_v2(in_db_path, out_db_path)
 
         if update_config:
             print("updating config.yaml")
             with lock_and_load_config(root_path, "config.yaml") as config:
-                new_db_path = db_pattern.replace("_v2_", "_v2_r1_")
+                new_db_path = db_pattern.replace("_v1_", "_v2_")
                 config["full_node"]["database_path"] = new_db_path
                 print(f"database_path: {new_db_path}")
                 save_config(root_path, "config.yaml", config)
@@ -117,7 +118,7 @@ HINT_COMMIT_RATE = 2000
 COIN_COMMIT_RATE = 30000
 
 
-def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
+def convert_v1_to_v2(in_path: Path, out_path: Path) -> None:
     import sqlite3
     from contextlib import closing
 
@@ -135,10 +136,10 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
     print(f"opening file for reading: {in_path}")
     with closing(sqlite3.connect(in_path)) as in_db:
         try:
-            with closing(in_db.execute("pragma table_info(full_blocks)")) as cursor:
-                columns = [column[1] for column in cursor.fetchall()]
-                if 'farm_puzzle_hash' in columns:
-                    raise RuntimeError(f"blockchain database already version v2_r1. Won't convert")
+            with closing(in_db.execute("SELECT * from database_version")) as cursor:
+                row = cursor.fetchone()
+                if row is not None and row[0] != 1:
+                    raise RuntimeError(f"blockchain database already version {row[0]}. Won't convert")
         except sqlite3.OperationalError:
             pass
 
@@ -153,7 +154,7 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
             out_db.execute("CREATE TABLE database_version(version int)")
             out_db.execute("INSERT INTO database_version VALUES(?)", (2,))
 
-            print("initializing v2_r1 block store")
+            print("initializing v2 block store")
             out_db.execute(
                 "CREATE TABLE full_blocks("
                 "header_hash blob PRIMARY KEY,"
@@ -171,11 +172,11 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
             )
             out_db.execute("CREATE TABLE current_peak(key int PRIMARY KEY, hash blob)")
 
-            with closing(in_db.execute("SELECT header_hash, height from full_blocks WHERE in_main_chain = 1 ORDER BY height DESC")) as cursor:
+            with closing(in_db.execute("SELECT header_hash, height from block_records WHERE is_peak = 1")) as cursor:
                 peak_row = cursor.fetchone()
                 if peak_row is None:
                     raise RuntimeError("v1 database does not have a peak block, there is no blockchain to convert")
-            peak_hash = bytes32(peak_row[0])
+            peak_hash = bytes32(bytes.fromhex(peak_row[0]))
             peak_height = uint32(peak_row[1])
             print(f"peak: {peak_hash.hex()} height: {peak_height}")
 
@@ -183,54 +184,82 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
             out_db.commit()
 
             print("[1/5] converting full_blocks")
+            height = peak_height + 1
+            hh = peak_hash
 
             commit_in = BLOCK_COMMIT_RATE
             rate = 1.0
             start_time = time()
             block_start_time = start_time
             block_values = []
+
             with closing(
                 in_db.execute(
-                    "SELECT header_hash, prev_hash, height, sub_epoch_summary, is_fully_compactified, block, "
-                    "block_record FROM full_blocks WHERE in_main_chain = 1 ORDER BY height DESC"
+                    "SELECT header_hash, prev_hash, block, sub_epoch_summary FROM block_records ORDER BY height DESC"
                 )
             ) as cursor:
-                out_db.execute("begin transaction")
-                for row in cursor:
-                    block_record = block_record_to_block_record(row[6])
-                    height = row[2]
-                    block_values.append(
-                        (
-                            row[0],
-                            row[1],
-                            height,
-                            row[3],
-                            row[4],
-                            1,
-                            row[5],
-                            bytes(block_record),
-                            block_record.farm_puzzle_hash,
-                        )
+                with closing(
+                    in_db.execute(
+                        "SELECT header_hash, height, is_fully_compactified, block FROM full_blocks ORDER BY height DESC"
                     )
-                    if (height % 1000) == 0:
-                        print(
-                            f"\r{height: 10d} {(peak_height-height)*100/peak_height:.2f}% "
-                            f"{rate:0.1f} blocks/s ETA: {height//rate} s    ",
-                            end="",
+                ) as cursor_2:
+                    out_db.execute("begin transaction")
+                    for row in cursor:
+                        header_hash = bytes.fromhex(row[0])
+                        if header_hash != hh:
+                            continue
+
+                        # progress cursor_2 until we find the header hash
+                        while True:
+                            row_2 = cursor_2.fetchone()
+                            if row_2 is None:
+                                raise RuntimeError(f"block {hh.hex()} not found")
+                            if bytes.fromhex(row_2[0]) == hh:
+                                break
+
+                        assert row_2[1] == height - 1
+                        height = row_2[1]
+                        is_fully_compactified = row_2[2]
+                        block_bytes = row_2[3]
+
+                        prev_hash = bytes32.fromhex(row[1])
+                        block_record = row[2]
+                        ses = row[3]
+                        blockRecord = BlockRecord.from_bytes(block_record)
+
+                        block_values.append(
+                            (
+                                hh,
+                                prev_hash,
+                                height,
+                                ses,
+                                is_fully_compactified,
+                                1,  # in_main_chain
+                                zstd.compress(block_bytes),
+                                block_record,
+                                create_puzzlehash_for_pk(block_record.farmer_public_key),
+                            )
                         )
-                        sys.stdout.flush()
-                    commit_in -= 1
-                    if commit_in == 0:
-                        commit_in = BLOCK_COMMIT_RATE
-                        out_db.executemany(
-                            "INSERT OR REPLACE INTO full_blocks VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", block_values
-                        )
-                        out_db.commit()
-                        out_db.execute("begin transaction")
-                        block_values = []
-                        end_time = time()
-                        rate = BLOCK_COMMIT_RATE / (end_time - start_time)
-                        start_time = end_time
+                        hh = prev_hash
+                        if (height % 1000) == 0:
+                            print(
+                                f"\r{height: 10d} {(peak_height-height)*100/peak_height:.2f}% "
+                                f"{rate:0.1f} blocks/s ETA: {height//rate} s    ",
+                                end="",
+                            )
+                            sys.stdout.flush()
+                        commit_in -= 1
+                        if commit_in == 0:
+                            commit_in = BLOCK_COMMIT_RATE
+                            out_db.executemany(
+                                "INSERT OR REPLACE INTO full_blocks VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", block_values
+                            )
+                            out_db.commit()
+                            out_db.execute("begin transaction")
+                            block_values = []
+                            end_time = time()
+                            rate = BLOCK_COMMIT_RATE / (end_time - start_time)
+                            start_time = end_time
 
             out_db.executemany("INSERT OR REPLACE INTO full_blocks VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", block_values)
             out_db.commit()
@@ -248,7 +277,9 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
                 count = 0
                 out_db.execute("begin transaction")
                 for row in cursor:
-                    ses_values.append((row[0], row[1]))
+                    block_hash = bytes32.fromhex(row[0])
+                    ses = row[1]
+                    ses_values.append((block_hash, ses))
                     count += 1
                     if (count % 100) == 0:
                         print(f"\r{count:10d}  ", end="")
@@ -337,12 +368,12 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
 
                     coin_values.append(
                         (
-                            row[0],
+                            bytes.fromhex(row[0]),
                             row[1],
                             spent_index,
                             row[3],
-                            row[4],
-                            row[5],
+                            bytes.fromhex(row[4]),
+                            bytes.fromhex(row[5]),
                             row[6],
                             row[7],
                         )
@@ -371,7 +402,6 @@ def convert_v2_to_v2_r1(in_path: Path, out_path: Path) -> None:
             index_start_time = time()
             print("      block store")
             out_db.execute("CREATE INDEX height on full_blocks(height)")
-            out_db.execute("CREATE INDEX farm_puzzle_hash on full_blocks(farm_puzzle_hash)")
             out_db.execute(
                 "CREATE INDEX is_fully_compactified ON"
                 " full_blocks(is_fully_compactified, in_main_chain) WHERE in_main_chain=1"

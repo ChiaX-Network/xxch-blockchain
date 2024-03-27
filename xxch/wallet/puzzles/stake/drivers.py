@@ -9,8 +9,9 @@ from xxch.types.blockchain_format.program import Program
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.coin_spend import CoinSpend
 from xxch.types.condition_opcodes import ConditionOpcode
+from xxch.types.stake_value import get_stake_value
 from xxch.util.condition_tools import conditions_for_solution
-from xxch.util.ints import uint64
+from xxch.util.ints import uint64, uint32
 from xxch.util.misc import VersionedBlob
 from xxch.wallet.puzzles.clawback.drivers import AUGMENTED_CONDITION, AUGMENTED_CONDITION_HASH, P2_1_OF_N
 from xxch.wallet.puzzles.stake.metadata import StakeMetadata
@@ -146,7 +147,7 @@ def match_stake_puzzle(
     if puzzle.get_tree_hash() not in new_puzhash:
         # The metadata doesn't match the inner puzzle, ignore it
         log.error(
-            f"Stake metadata {metadata} doesn't match inner puzzle {puzzle.get_tree_hash().hex()}"
+            f"match Stake metadata {metadata} doesn't match inner puzzle {puzzle.get_tree_hash().hex()}"
         )  # pragma: no cover
         return None  # pragma: no cover
     return metadata
@@ -168,7 +169,7 @@ def match_stake_puzzle_by_coin_spend(
     if puzzle_ph not in new_puzhash:
         # The metadata doesn't match the inner puzzle, ignore it
         log.error(
-            f"Stake metadata {metadata} doesn't match inner puzzle {puzzle_ph.hex()}"
+            f"Stake height metadata {metadata} doesn't match inner puzzle {puzzle_ph.hex()}"
         )  # pragma: no cover
         return None, None   # pragma: no cover
     return metadata, puzzle_ph

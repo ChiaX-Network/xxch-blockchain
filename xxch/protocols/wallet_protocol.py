@@ -9,6 +9,7 @@ from xxch.full_node.fee_estimate import FeeEstimateGroup
 from xxch.types.blockchain_format.coin import Coin
 from xxch.types.blockchain_format.serialized_program import SerializedProgram
 from xxch.types.blockchain_format.sized_bytes import bytes32
+from xxch.types.coin_record import CoinRecord
 from xxch.types.header_block import HeaderBlock
 from xxch.types.spend_bundle import SpendBundle
 from xxch.util.ints import uint8, uint32, uint64, uint128
@@ -288,3 +289,19 @@ class RequestStakeFarmCount(Streamable):
 @dataclass(frozen=True)
 class RespondStakeFarmCount(Streamable):
     count: Optional[uint8]
+
+
+@streamable
+@dataclass(frozen=True)
+class RequestCoinRecords(Streamable):
+    include_spent_coins: bool
+    puzzle_hash: bytes32
+    limit: Optional[uint32]
+    start_height: Optional[uint32]
+    end_height: Optional[uint32]
+
+
+@streamable
+@dataclass(frozen=True)
+class RespondCoinRecords(Streamable):
+    coinRecords: List[CoinRecord]

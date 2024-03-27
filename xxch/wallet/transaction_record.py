@@ -30,7 +30,7 @@ minimum_send_attempts = 6
 @dataclass
 class ItemAndTransactionRecords(Generic[T]):
     item: T
-    transaction_records: List["TransactionRecord"]
+    transaction_records: List[TransactionRecord]
 
 
 @streamable
@@ -63,11 +63,10 @@ class TransactionRecordOld(Streamable):
     memos: List[Tuple[bytes32, List[bytes]]]
 
     def is_in_mempool(self) -> bool:
-        # If one of the nodes we sent it to responded with success, we set it to success
+        # If one of the nodes we sent it to responded with success or pending, we return True
         for _, mis, _ in self.sent_to:
-            if MempoolInclusionStatus(mis) == MempoolInclusionStatus.SUCCESS:
+            if MempoolInclusionStatus(mis) in (MempoolInclusionStatus.SUCCESS, MempoolInclusionStatus.PENDING):
                 return True
-        # Note, transactions pending inclusion (pending) return false
         return False
 
     def height_farmed(self, genesis_challenge: bytes32) -> Optional[uint32]:
@@ -83,7 +82,10 @@ class TransactionRecordOld(Streamable):
                 if block_index < 0:
                     return None
                 height = uint32(block_index)
+                pool_parent = pool_parent_id(height, genesis_challenge)
                 farmer_parent = farmer_parent_id(height, genesis_challenge)
+                if pool_parent == self.additions[0].parent_coin_info:
+                    return height
                 if farmer_parent == self.additions[0].parent_coin_info:
                     return height
                 stake_farm_parent = stake_farm_reward_parent_id(height, genesis_challenge)
@@ -91,9 +93,6 @@ class TransactionRecordOld(Streamable):
                     return height
                 stake_lock_parent = stake_lock_reward_parent_id(height, genesis_challenge)
                 if stake_lock_parent == self.additions[0].parent_coin_info:
-                    return height
-                pool_parent = pool_parent_id(height, genesis_challenge)
-                if pool_parent == self.additions[0].parent_coin_info:
                     return height
         return None
 

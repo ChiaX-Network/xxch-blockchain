@@ -8,7 +8,7 @@ from math import ceil
 from pathlib import Path
 from typing import Dict, ItemsView, KeysView, List, Optional, Tuple, ValuesView
 
-from blspy import G1Element
+from chia_rs import G1Element
 from chiapos import DiskProver
 
 from xxch.plotting.util import parse_plot_info
@@ -53,7 +53,7 @@ class CacheEntry:
     last_use: float
 
     @classmethod
-    def from_disk_prover(cls, prover: DiskProver) -> "CacheEntry":
+    def from_disk_prover(cls, prover: DiskProver) -> CacheEntry:
         (
             pool_public_key_or_puzzle_hash,
             farmer_public_key,
@@ -161,7 +161,7 @@ class Cache:
                     )
                     # TODO, drop the below entry dropping after few versions or whenever we force a cache recreation.
                     #       it's here to filter invalid cache entries coming from bladebit RAM plotting.
-                    #       Related: - https://github.com/Chiax-Network/xxch-blockchain/issues/13084
+                    #       Related: - https://github.com/Chia-Network/chia-blockchain/issues/13084
                     #                - https://github.com/Chia-Network/chiapos/pull/337
                     k = new_entry.prover.get_size()
                     if k not in estimated_c2_sizes:

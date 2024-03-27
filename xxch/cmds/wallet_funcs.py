@@ -95,10 +95,13 @@ def get_mojo_per_unit(wallet_type: WalletType) -> int:  # pragma: no cover
         WalletType.POOLING_WALLET,
         WalletType.DATA_LAYER,
         WalletType.VC,
+        WalletType.DAO,
     }:
         mojo_per_unit = units["xxch"]
     elif wallet_type in {WalletType.CAT, WalletType.CRCAT}:
         mojo_per_unit = units["cat"]
+    elif wallet_type in {WalletType.NFT, WalletType.DECENTRALIZED_ID, WalletType.DAO_CAT}:
+        mojo_per_unit = units["mojo"]
     else:
         raise LookupError(f"Operation is not supported for Wallet type {wallet_type.name}")
 
@@ -186,7 +189,9 @@ async def get_transactions(
         if paginate is None:
             paginate = sys.stdout.isatty()
         type_filter = (
-            None
+            TransactionTypeFilter.exclude(
+                [TransactionType.INCOMING_STAKE_FARM_RECEIVE, TransactionType.INCOMING_STAKE_LOCK_RECEIVE]
+            )
             if not clawback
             else TransactionTypeFilter.include(
                 [TransactionType.INCOMING_CLAWBACK_RECEIVE, TransactionType.INCOMING_CLAWBACK_SEND]
@@ -687,7 +692,7 @@ async def take_offer(
     async with get_wallet_client(wallet_rpc_port, fp) as (wallet_client, fingerprint, config):
         if os.path.exists(file):
             filepath = pathlib.Path(file)
-            with open(filepath, "r") as ffile:
+            with open(filepath) as ffile:
                 offer_hex: str = ffile.read()
                 ffile.close()
         else:
@@ -877,6 +882,13 @@ async def print_balances(
                     my_did = get_did_response["did_id"]
                     if my_did is not None and len(my_did) > 0:
                         print(f"{indent}{'-DID ID:'.ljust(ljust)} {my_did}")
+                elif typ == WalletType.DAO:
+                    get_id_response = await wallet_client.dao_get_treasury_id(wallet_id)
+                    treasury_id = get_id_response["treasury_id"][2:]
+                    print(f"{indent}{'-Treasury ID:'.ljust(ljust)} {treasury_id}")
+                elif typ == WalletType.DAO_CAT:
+                    cat_asset_id = summary["data"][32:96]
+                    print(f"{indent}{'-Asset ID:'.ljust(ljust)} {cat_asset_id}")
                 elif len(asset_id) > 0:
                     print(f"{indent}{'-Asset ID:'.ljust(ljust)} {asset_id}")
                 print(f"{indent}{'-Wallet ID:'.ljust(ljust)} {wallet_id}")
@@ -1434,6 +1446,8 @@ async def spend_clawback(
     async with get_wallet_client(wallet_rpc_port, fp) as (wallet_client, _, _):
         tx_ids = []
         for tid in tx_ids_str.split(","):
+            if tid == "":
+                continue
             tx_ids.append(bytes32.from_hexstr(tid))
         if len(tx_ids) == 0:
             print("Transaction ID is required.")

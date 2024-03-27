@@ -23,6 +23,12 @@ class SesCache(Streamable):
     content: List[Tuple[uint32, bytes]]
 
 
+@streamable
+@dataclass(frozen=True)
+class FarmCountCache(Streamable):
+    content: List[Tuple[bytes32, uint32]]
+
+
 class BlockHeightMap:
     db: DBWrapper2
 
@@ -34,6 +40,7 @@ class BlockHeightMap:
     # ordered by height. i.e. __height_to_hash[0..32] is the genesis hash
     # __height_to_hash[32..64] is the hash for height 1 and so on
     __height_to_hash: bytearray
+    __height_to_farm: bytearray
 
     # All sub-epoch summaries that have been included in the blockchain from the beginning until and including the peak
     # (height_included, SubEpochSummary). Note: ONLY for the blocks in the path to the peak
@@ -48,15 +55,17 @@ class BlockHeightMap:
     # to disk. When it's time to write to disk, we can start flushing from this
     # offset
     __first_dirty: int
+    __first_dirty_farm: int
 
     # the file we're saving the height-to-hash cache to
     __height_to_hash_filename: Path
+    __height_to_farm_filename: Path
 
     # the file we're saving the sub epoch summary cache to
     __ses_filename: Path
 
     @classmethod
-    async def create(cls, blockchain_dir: Path, db: DBWrapper2) -> "BlockHeightMap":
+    async def create(cls, blockchain_dir: Path, db: DBWrapper2) -> BlockHeightMap:
         if db.db_version != 2:
             raise RuntimeError(f"BlockHeightMap does not support database schema v{db.db_version}")
         self = BlockHeightMap()
@@ -65,8 +74,10 @@ class BlockHeightMap:
         self.__counter = 0
         self.__first_dirty = 0
         self.__height_to_hash = bytearray()
+        self.__height_to_farm = bytearray()
         self.__sub_epoch_summaries = {}
         self.__height_to_hash_filename = blockchain_dir / "height-to-hash"
+        self.__height_to_farm_filename = blockchain_dir / "height-to-farm"
         self.__ses_filename = blockchain_dir / "sub-epoch-summaries"
 
         async with self.db.reader_no_transaction() as conn:
@@ -76,7 +87,8 @@ class BlockHeightMap:
                     return self
 
             async with conn.execute(
-                "SELECT header_hash,prev_hash,height,sub_epoch_summary FROM full_blocks WHERE header_hash=?",
+                "SELECT header_hash,prev_hash,height,sub_epoch_summary,farm_puzzle_hash "
+                "FROM full_blocks WHERE header_hash=?",
                 (peak_row[0],),
             ) as cursor:
                 row = await cursor.fetchone()
@@ -91,6 +103,13 @@ class BlockHeightMap:
             pass
 
         try:
+            async with aiofiles.open(self.__height_to_farm_filename, "rb") as f:
+                self.__height_to_farm = bytearray(await f.read())
+        except Exception:
+            # it's OK if this file doesn't exist, we can rebuild it
+            pass
+
+        try:
             async with aiofiles.open(self.__ses_filename, "rb") as f:
                 self.__sub_epoch_summaries = {k: v for (k, v) in SesCache.from_bytes(await f.read()).content}
         except Exception:
@@ -100,6 +119,7 @@ class BlockHeightMap:
         peak: bytes32 = row[0]
         prev_hash: bytes32 = row[1]
         height = row[2]
+        farm_puzzle_hash = row[4]
 
         # allocate memory for height to hash map
         # this may also truncate it, if thie file on disk had an invalid size
@@ -110,28 +130,37 @@ class BlockHeightMap:
         else:
             self.__height_to_hash += bytearray([0] * (new_size - size))
 
+        size = len(self.__height_to_farm)
+        if size > new_size:
+            del self.__height_to_farm[new_size:]
+        else:
+            self.__height_to_farm += bytearray([0] * (new_size - size))
+
         self.__first_dirty = height + 1
 
-        # if the peak hash is already in the height-to-hash map, we don't need
-        # to load anything more from the DB
         if self.get_hash(height) != peak:
-            self.__set_hash(height, peak)
+            self.__set_hash(height, peak, farm_puzzle_hash)
 
-            if row[3] is not None:
-                self.__sub_epoch_summaries[height] = row[3]
+        if row[3] is not None:
+            self.__sub_epoch_summaries[height] = row[3]
 
-            # prepopulate the height -> hash mapping
-            await self._load_blocks_from(height, prev_hash)
+        # prepopulate the height -> hash mapping
+        # run this unconditionally in to ensure both the height-to-hash and sub
+        # epoch summaries caches are in sync with the DB
+        await self._load_blocks_from(height, prev_hash)
 
-            await self.maybe_flush()
+        await self.maybe_flush()
 
         return self
 
-    def update_height(self, height: uint32, header_hash: bytes32, ses: Optional[SubEpochSummary]) -> None:
+    def update_height(
+            self, height: uint32, header_hash: bytes32, ses: Optional[SubEpochSummary], farm_puzzle_hash: bytes32
+    ) -> None:
         # we're only updating the last hash. If we've reorged, we already rolled
         # back, making this the new peak
         assert height * 32 <= len(self.__height_to_hash)
-        self.__set_hash(height, header_hash)
+        assert height * 32 <= len(self.__height_to_farm)
+        self.__set_hash(height, header_hash, farm_puzzle_hash)
         if ses is not None:
             self.__sub_epoch_summaries[height] = bytes(ses)
 
@@ -140,6 +169,7 @@ class BlockHeightMap:
             return
 
         assert (len(self.__height_to_hash) % 32) == 0
+        assert (len(self.__height_to_farm) % 32) == 0
         offset = self.__first_dirty * 32
 
         ses_buf = bytes(SesCache([(k, v) for (k, v) in self.__sub_epoch_summaries.items()]))
@@ -157,29 +187,49 @@ class BlockHeightMap:
                 map_buf = self.__height_to_hash.copy()
                 await f.write(map_buf)
 
+        try:
+            async with aiofiles.open(self.__height_to_farm_filename, "r+b") as f:
+                farm_buf = self.__height_to_farm[offset:].copy()
+                await f.seek(offset)
+                await f.write(farm_buf)
+        except Exception:
+            # if the file doesn't exist, write the whole buffer
+            async with aiofiles.open(self.__height_to_farm_filename, "wb") as f:
+                farm_buf = self.__height_to_farm.copy()
+                await f.write(farm_buf)
+
         self.__first_dirty = len(self.__height_to_hash) // 32
+        assert self.__first_dirty == len(self.__height_to_farm) // 32
         await write_file_async(self.__ses_filename, ses_buf)
 
     # load height-to-hash map entries from the DB starting at height back in
     # time until we hit a match in the existing map, at which point we can
     # assume all previous blocks have already been populated
+    # the first iteration is mandatory on each startup, so we make it load fewer
+    # blocks to be fast. The common case is that the files are in sync with the
+    # DB so iteration can stop early.
     async def _load_blocks_from(self, height: uint32, prev_hash: bytes32) -> None:
+        # on mainnet, every 384th block has a sub-epoch summary. This should
+        # guarantee that we find at least one in the first iteration. If it
+        # matches, we're done reconciliating the cache with the DB.
+        window_size = 400
         while height > 0:
             # load 5000 blocks at a time
-            window_end = max(0, height - 5000)
+            window_end = max(0, height - window_size)
+            window_size = 5000
 
             query = (
-                "SELECT header_hash,prev_hash,height,sub_epoch_summary from full_blocks "
-                "INDEXED BY height WHERE height>=? AND height <?"
+                "SELECT header_hash,prev_hash,height,sub_epoch_summary,farm_puzzle_hash from full_blocks "
+                "INDEXED BY height WHERE in_main_chain=1 AND height>=? AND height <?"
             )
 
             async with self.db.reader_no_transaction() as conn:
                 async with conn.execute(query, (window_end, height)) as cursor:
                     # maps block-hash -> (height, prev-hash, sub-epoch-summary)
-                    ordered: Dict[bytes32, Tuple[uint32, bytes32, Optional[bytes]]] = {}
+                    ordered: Dict[bytes32, Tuple[uint32, bytes32, Optional[bytes], bytes32]] = {}
 
                     for r in await cursor.fetchall():
-                        ordered[r[0]] = (r[2], r[1], r[3])
+                        ordered[r[0]] = (r[2], r[1], r[3], r[4])
 
             while height > window_end:
                 if prev_hash not in ordered:
@@ -189,12 +239,17 @@ class BlockHeightMap:
                 entry = ordered[prev_hash]
                 assert height == entry[0] + 1
                 height = entry[0]
+                farm_puzzle_hash = entry[3]
                 if entry[2] is not None:
                     if (
                         self.get_hash(height) == prev_hash
+                        and self.get_farm(height) == farm_puzzle_hash
                         and height in self.__sub_epoch_summaries
                         and self.__sub_epoch_summaries[height] == entry[2]
                     ):
+                        # we only terminate the loop if we encounter a block
+                        # that has a sub epoch summary matching the cache and
+                        # the block hash matches the cache
                         return
                     self.__sub_epoch_summaries[height] = entry[2]
                 elif height in self.__sub_epoch_summaries:
@@ -202,12 +257,13 @@ class BlockHeightMap:
                     # cache doesn't represent any of it at all, a missing sub
                     # epoch summary needs to be removed from the cache too
                     del self.__sub_epoch_summaries[height]
-                self.__set_hash(height, prev_hash)
+                self.__set_hash(height, prev_hash, farm_puzzle_hash)
                 prev_hash = entry[1]
 
-    def __set_hash(self, height: int, block_hash: bytes32) -> None:
+    def __set_hash(self, height: int, block_hash: bytes32, farm_puzzle_hash: bytes32) -> None:
         idx = height * 32
         self.__height_to_hash[idx : idx + 32] = block_hash
+        self.__height_to_farm[idx : idx + 32] = farm_puzzle_hash
         self.__counter += 1
         self.__first_dirty = min(self.__first_dirty, height)
 
@@ -219,6 +275,17 @@ class BlockHeightMap:
     def contains_height(self, height: uint32) -> bool:
         return height * 32 < len(self.__height_to_hash)
 
+    def get_farm(self, height: uint32) -> bytes32:
+        idx = height * 32
+        assert idx + 32 <= len(self.__height_to_farm)
+        return bytes32(self.__height_to_farm[idx : idx + 32])
+
+    def get_height_farm_count(self, begin_height: uint32, height: uint32, farm_puzzle_hash: bytes32) -> int:
+        return self.__height_to_farm.count(farm_puzzle_hash, begin_height * 32 + 32, height * 32)
+
+    def contains_height_farm(self, height: uint32) -> bool:
+        return height * 32 < len(self.__height_to_farm)
+
     def rollback(self, fork_height: int) -> None:
         # fork height may be -1, in which case all blocks are different and we
         # should clear all sub epoch summaries
@@ -228,11 +295,14 @@ class BlockHeightMap:
                 heights_to_delete.append(ses_included_height)
         for height in heights_to_delete:
             del self.__sub_epoch_summaries[height]
+
         del self.__height_to_hash[(fork_height + 1) * 32 :]
+        del self.__height_to_farm[(fork_height + 1) * 32 :]
         self.__first_dirty = min(self.__first_dirty, fork_height + 1)
 
     def get_ses(self, height: uint32) -> SubEpochSummary:
         return SubEpochSummary.from_bytes(self.__sub_epoch_summaries[height])
+
 
     def get_ses_heights(self) -> List[uint32]:
         return sorted(self.__sub_epoch_summaries.keys())

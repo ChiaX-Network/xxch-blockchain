@@ -1,0 +1,16 @@
+[Unit]
+Description=Xxch Seeder Service for %i
+Requires=xxch-daemon@%i.service
+After=xxch-daemon@%i.service
+
+[Service]
+Type=simple
+Environment=XXCH_ROOT=/home/%i/.xxch/mainnet
+ExecStart=/opt/xxch/xxch_seeder
+User=%i
+Group=%i
+LimitNOFILE=1048576
+LimitNPROC=1048576
+
+[Install]
+WantedBy=multi-user.target

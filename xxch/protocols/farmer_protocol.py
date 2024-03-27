@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, List
+from typing import Optional, List, Tuple
 
-from blspy import G2Element, G1Element
+from chia_rs import G1Element, G2Element
 
 from xxch.types.blockchain_format.pool_target import PoolTarget
 from xxch.types.blockchain_format.proof_of_space import ProofOfSpace

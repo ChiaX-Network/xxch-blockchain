@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from xxch.data_layer.data_layer import DataLayer
-from xxch.server.server import XxchServer
+from xxch.server.server import xxchServer
 
 
 class DataLayerAPI:
@@ -18,7 +18,7 @@ class DataLayerAPI:
     #     self.full_node.state_changed_callback = callback
 
     @property
-    def server(self) -> XxchServer:
+    def server(self) -> xxchServer:
         return self.data_layer.server
 
     def ready(self) -> bool:

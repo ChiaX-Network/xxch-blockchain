@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 
-from xxch.consensus.block_rewards import calculate_stake_farm_reward
+from xxch.consensus.block_rewards import calculate_stake_farm_reward, STAKE_FORK_HEIGHT
 from xxch.consensus.coinbase import create_stake_farm_reward_coin, create_stake_lock_reward_coin
 from xxch.consensus.constants import ConsensusConstants
 from xxch.types.blockchain_format.coin import Coin
@@ -48,14 +48,31 @@ def create_stake_farm_rewards(
     stake_rewards: List[Coin] = []
     reward_amount = calculate_stake_farm_reward(height)
     sum_amount = sum(records[puzzle_hash] for puzzle_hash in records)
-    for puzzle_hash in records:
-        stake_coin = create_stake_farm_reward_coin(
-            height,
-            puzzle_hash,
-            uint64(int(records[puzzle_hash] / sum_amount * reward_amount)),
-            constants.GENESIS_CHALLENGE,
-        )
-        stake_rewards.append(stake_coin)
+    if height < STAKE_FORK_HEIGHT:
+        for puzzle_hash in records:
+            stake_coin = create_stake_farm_reward_coin(
+                height,
+                puzzle_hash,
+                uint64(int(records[puzzle_hash] * reward_amount / sum_amount)),
+                constants.GENESIS_CHALLENGE,
+            )
+            stake_rewards.append(stake_coin)
+    else:
+        balance = reward_amount
+        total = len(records) - 1
+        for index, puzzle_hash in enumerate(records.keys()):
+            if index == total:
+                amount = balance
+            else:
+                amount = int(records[puzzle_hash] * reward_amount / sum_amount)
+                balance -= amount
+            stake_coin = create_stake_farm_reward_coin(
+                height,
+                puzzle_hash,
+                uint64(amount),
+                constants.GENESIS_CHALLENGE,
+            )
+            stake_rewards.append(stake_coin)
     return stake_rewards
 
 

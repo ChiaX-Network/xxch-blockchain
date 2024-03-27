@@ -20,7 +20,6 @@ usage() {
 
 PACMAN_AUTOMATED=
 EXTRAS=
-BLSPY_STUBS=
 SKIP_PACKAGE_INSTALL=
 PLOTTER_INSTALL=
 EDITABLE='-e'
@@ -31,7 +30,7 @@ do
     # automated
     a) PACMAN_AUTOMATED=--noconfirm;;
     # development
-    d) EXTRAS=${EXTRAS}dev,;BLSPY_STUBS=1;;
+    d) EXTRAS=${EXTRAS}dev,;;
     # non-editable
     i) EDITABLE='';;
     # legacy keyring
@@ -64,7 +63,7 @@ if [ "$(uname -m)" = "armv7l" ]; then
   echo "WARNING:"
   echo "The Xxch Blockchain requires a 64 bit OS and this is 32 bit armv7l"
   echo "For more information, see"
-  echo "https://github.com/Chiax-Network/xxch-blockchain/wiki/Raspberry-Pi"
+  echo "https://github.com/Chia-Network/chia-blockchain/wiki/Raspberry-Pi"
   echo "Exiting."
   exit 1
 fi
@@ -335,10 +334,6 @@ python -m pip install wheel
 python -m pip install --extra-index-url https://pypi.chia.net/simple/ miniupnpc==2.2.2
 python -m pip install ${EDITABLE} ."${EXTRAS}" --extra-index-url https://pypi.chia.net/simple/
 
-if [ -n "$BLSPY_STUBS" ]; then
-python -m pip install ${EDITABLE} ./blspy-stubs
-fi
-
 if [ -n "$PLOTTER_INSTALL" ]; then
   set +e
   PREV_VENV="$VIRTUAL_ENV"
@@ -355,7 +350,7 @@ echo "For assistance join us on Discord in the #support chat channel:"
 echo "https://discord.gg/xxch"
 echo ""
 echo "Try the Quick Start Guide to running xxch-blockchain:"
-echo "https://github.com/Chiax-Network/xxch-blockchain/wiki/Quick-Start-Guide"
+echo "https://github.com/Chia-Network/chia-blockchain/wiki/Quick-Start-Guide"
 echo ""
 echo "To install the GUI run '. ./activate' then 'sh install-gui.sh'."
 echo ""

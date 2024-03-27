@@ -4,17 +4,17 @@ import dataclasses
 import logging
 import sqlite3
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Collection, Dict, List, Optional, Set, Tuple
 
 import typing_extensions
 from aiosqlite import Cursor
 
 from xxch.protocols.wallet_protocol import CoinState
 from xxch.types.blockchain_format.coin import Coin
-from xxch.types.blockchain_format.sized_bytes import bytes32
+from xxch.types.blockchain_format.sized_bytes import bytes32, bytes48
 from xxch.types.coin_record import CoinRecord
 from xxch.util.db_wrapper import SQLITE_MAX_VARIABLE_NUMBER, DBWrapper2
-from xxch.util.ints import uint32, uint64
+from xxch.util.ints import uint32, uint64, uint128
 from xxch.util.lru_cache import LRUCache
 from xxch.util.misc import to_batches
 
@@ -30,12 +30,13 @@ class CoinStore:
 
     db_wrapper: DBWrapper2
     coins_added_at_height_cache: LRUCache[uint32, List[CoinRecord]]
+    stake_height_cache: LRUCache[bytes48, uint128]
 
     @classmethod
     async def create(cls, db_wrapper: DBWrapper2) -> CoinStore:
         if db_wrapper.db_version != 2:
             raise RuntimeError(f"CoinStore does not support database schema v{db_wrapper.db_version}")
-        self = CoinStore(db_wrapper, LRUCache(100))
+        self = CoinStore(db_wrapper, LRUCache(100), LRUCache(128))
 
         async with self.db_wrapper.writer_maybe_transaction() as conn:
             log.info("DB: Creating coin store tables and indexes.")
@@ -81,8 +82,8 @@ class CoinStore:
         self,
         height: uint32,
         timestamp: uint64,
-        included_reward_coins: Set[Coin],
-        tx_additions: List[Coin],
+        included_reward_coins: Collection[Coin],
+        tx_additions: Collection[Coin],
         tx_removals: List[bytes32],
     ) -> List[CoinRecord]:
         """
@@ -107,7 +108,7 @@ class CoinStore:
         if height == 0:
             assert len(included_reward_coins) == 0
         else:
-            assert len(included_reward_coins) >= 2
+            assert len(included_reward_coins) >= 1
 
         for coin in included_reward_coins:
             reward_coin_r: CoinRecord = CoinRecord(
@@ -146,7 +147,7 @@ class CoinStore:
                     return CoinRecord(coin, row[0], row[1], row[2], row[6])
         return None
 
-    async def get_coin_records(self, names: List[bytes32]) -> List[CoinRecord]:
+    async def get_coin_records(self, names: Collection[bytes32]) -> List[CoinRecord]:
         if len(names) == 0:
             return []
 
@@ -461,7 +462,7 @@ class CoinStore:
                     int(record.coinbase),
                     record.coin.puzzle_hash,
                     record.coin.parent_coin_info,
-                    bytes(uint64(record.coin.amount)),
+                    uint64(record.coin.amount).stream_to_bytes(),
                     record.timestamp,
                 )
             )
@@ -496,11 +497,25 @@ class CoinStore:
                     f"Invalid operation to set spent, total updates {rows_updated} expected {len(coin_names)}"
                 )
 
-    # recover nft
-    async def check_puzzle_hash_coin(self, puzzle_hash: bytes32) -> bool:
+    async def get_coin_records_by_puzzle_hash_limit(
+        self,
+        include_spent_coins: bool,
+        puzzle_hash: bytes32,
+        limit: Optional[uint32] = None,
+        start_height: uint32 = uint32(0),
+        end_height: uint32 = uint32((2 ** 32) - 1),
+    ) -> List[CoinRecord]:
+        coins = set()
         async with self.db_wrapper.reader_no_transaction() as conn:
-            existing = await conn.execute_fetchall(
-                "SELECT puzzle_hash FROM coin_record INDEXED BY coin_puzzle_hash WHERE puzzle_hash=? LIMIT ?",
-                (puzzle_hash, 1),
-            )
-            return existing is not None
+            limit_where = f" LIMIT {limit}" if limit is not None and limit > 0 else ''
+            async with conn.execute(
+                f"SELECT confirmed_index, spent_index, coinbase, puzzle_hash, "
+                f"coin_parent, amount, timestamp FROM coin_record INDEXED BY coin_puzzle_hash WHERE puzzle_hash=? "
+                f"AND confirmed_index>=? AND confirmed_index<?"
+                f"{'' if include_spent_coins else ' AND spent_index=0'}{limit_where}",
+                (puzzle_hash, start_height, end_height),
+            ) as cursor:
+                for row in await cursor.fetchall():
+                    coin = self.row_to_coin(row)
+                    coins.add(CoinRecord(coin, row[0], row[1], row[2], row[6]))
+                return list(coins)

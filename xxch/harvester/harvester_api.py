@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from blspy import AugSchemeMPL, G1Element, G2Element
+from chia_rs import AugSchemeMPL, G1Element, G2Element
 
 from xxch.consensus.pot_iterations import calculate_iterations_quality, calculate_sp_interval_iters
 from xxch.harvester.harvester import Harvester
@@ -83,8 +83,8 @@ class HarvesterAPI:
         )
 
         start = time.time()
-        stake_coefficients = {bytes(k): v for k, v in new_challenge.stake_coefficients}
         assert len(new_challenge.challenge_hash) == 32
+        stake_coefficients = {bytes(k): v for k, v in new_challenge.stake_coefficients}
 
         loop = asyncio.get_running_loop()
 
@@ -127,6 +127,7 @@ class HarvesterAPI:
                 stake_coefficient: Optional[uint64] = stake_coefficients.get(bytes(plot_info.farmer_public_key))
                 if stake_coefficient is None:
                     return []
+
                 responses: List[Tuple[bytes32, ProofOfSpace]] = []
                 if quality_strings is not None:
                     difficulty = new_challenge.difficulty

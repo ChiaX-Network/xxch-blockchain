@@ -121,3 +121,5 @@ class ProtocolMessageTypes(Enum):
     respond_stake_coefficients = 211
     request_stake_farm_count = 212
     respond_stake_farm_count = 213
+    request_coin_records_by_puzzle_hash = 214
+    respond_coin_records_by_puzzle_hash = 215

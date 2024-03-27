@@ -7,10 +7,11 @@ from xxch.full_node.signage_point import SignagePoint
 from xxch.rpc.rpc_client import RpcClient
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.coin_record import CoinRecord
-from xxch.types.coin_spend import CoinSpend
+from xxch.types.coin_spend import CoinSpend, CoinSpendWithConditions
 from xxch.types.end_of_slot_bundle import EndOfSubSlotBundle
 from xxch.types.full_block import FullBlock
 from xxch.types.spend_bundle import SpendBundle
+from xxch.types.stake_record import StakeRecord
 from xxch.types.unfinished_header_block import UnfinishedHeaderBlock
 from xxch.util.byte_types import hexstr_to_bytes
 from xxch.util.ints import uint32
@@ -208,6 +209,17 @@ class FullNodeRpcClient(RpcClient):
         except Exception:
             return None
 
+    async def get_block_spends_with_conditions(self, header_hash: bytes32) -> Optional[List[CoinSpendWithConditions]]:
+        try:
+            response = await self.fetch("get_block_spends_with_conditions", {"header_hash": header_hash.hex()})
+            block_spends: List[CoinSpendWithConditions] = []
+            for block_spend in response["block_spends_with_conditions"]:
+                block_spends.append(CoinSpendWithConditions.from_json_dict(block_spend))
+            return block_spends
+
+        except Exception:
+            return None
+
     async def push_tx(self, spend_bundle: SpendBundle) -> Dict[str, Any]:
         return await self.fetch("push_tx", {"spend_bundle": spend_bundle.to_json_dict()})
 
@@ -277,11 +289,8 @@ class FullNodeRpcClient(RpcClient):
         response = await self.fetch("get_fee_estimate", {"cost": cost, "target_times": target_times})
         return response
 
-    # recover nft
-    async def check_puzzle_hash_coin(self, puzzle_hash: bytes32) -> Optional[bool]:
-        try:
-            response = await self.fetch("check_puzzle_hash_coin", {"puzzle_hash": puzzle_hash.hex()})
-            return response["status"]
-        except Exception:
-            return False
-
+    async def get_stake_records(self, height: int) -> List[StakeRecord]:
+        response = await self.fetch(
+            "get_stake_records", {"height": height}
+        )
+        return [StakeRecord.from_json_dict(block) for block in response["stake_records"]]

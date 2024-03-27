@@ -26,7 +26,7 @@ from xxch.wallet.wallet_coin_store import GetCoinRecords
 transaction_type_descriptions = {
     TransactionType.OUTGOING_STAKE_FARM: "outgoing stake farm",
     TransactionType.INCOMING_STAKE_FARM_RECEIVE: "stake farm",
-    TransactionType.STAKE_FARM_WITHDRAW: "withdraw/stake farm",
+    TransactionType.STAKE_WITHDRAW: "withdraw stake",
     TransactionType.STAKE_FARM_REWARD: "stake farm reward",
     TransactionType.INCOMING_STAKE_LOCK_RECEIVE: "stake lock",
     TransactionType.STAKE_LOCK_WITHDRAW: "withdraw/stake lock",
@@ -159,13 +159,13 @@ async def stake_info(
 
 async def stake_send(
     wallet_rpc_port: Optional[int],
-    wallet_id: int,
-    stake_type: Optional[int],
-    stake_category: str,
     fp: Optional[int],
+    wallet_id: int,
     amount: int,
     fee: Decimal,
     address: str,
+    stake_type: Optional[int],
+    stake_category: str,
 ) -> None:
     if amount == 0:
         print("You can not stake an empty transaction")
@@ -173,10 +173,7 @@ async def stake_send(
 
     selected_stake_type: int = 0
     is_stake_farm = stake_category == "farm"
-    if is_stake_farm:
-        value_list = STAKE_FARM_LIST
-    else:
-        value_list = STAKE_LOCK_LIST
+    value_list = STAKE_FARM_LIST if is_stake_farm else STAKE_LOCK_LIST
     if stake_type is not None:
         if stake_type < 0 or stake_type >= len(value_list):
             raise CliRpcConnectionError("Invalid stake type")
@@ -189,8 +186,8 @@ async def stake_send(
             key_index_str += "*" if i == 0 else " "
             print(
                 f"{key_index_str:<{5}} "
-                f"{value.time_lock / 86400:<{4}}days "
-                f"({value.coefficient if is_stake_farm else str(value.coefficient * 10000)+'‱'})"
+                f"{int(value.time_lock / 86400)} Days "
+                f"({value.coefficient if is_stake_farm else str(float(Decimal(value.coefficient) * 10000))+'‱'})"
             )
         val = None
         prompt: str = (
@@ -284,7 +281,7 @@ async def find_pool_nft(
         wallet_rpc_port: Optional[int],
         fp: Optional[int],
         launcher_id: str,
-        contract_address: str
+        contract_address: str,
 ) -> None:
     async with get_wallet_client(wallet_rpc_port, fp) as (wallet_client, fingerprint, _):
         response = await wallet_client.find_pool_nft(launcher_id, contract_address)
@@ -302,13 +299,34 @@ async def recover_pool_nft(
         wallet_rpc_port: Optional[int],
         fp: Optional[int],
         launcher_id: str,
-        contract_address: str
+        contract_address: str,
+        fee: Decimal,
 ) -> None:
     async with get_wallet_client(wallet_rpc_port, fp) as (wallet_client, fingerprint, _):
-        response = await wallet_client.recover_pool_nft(launcher_id, contract_address)
+        final_fee: uint64 = uint64(int(fee * units["xxch"]))
+        response = await wallet_client.recover_pool_nft(launcher_id, contract_address, final_fee)
         address = response["contract_address"]
         status = response["status"]
         amount = response["amount"] / units["xxch"]
         print(f"Contract Address: {address}")
         print(f"Record Amount: {amount} XXCH")
         print(f"Status: {status}")
+
+
+async def spend_withdraw(
+    *, wallet_rpc_port: Optional[int], fp: Optional[int], fee: Decimal, tx_ids_str: str, force: bool = False
+) -> None:  # pragma: no cover
+    async with get_wallet_client(wallet_rpc_port, fp) as (wallet_client, _, _):
+        tx_ids = []
+        for tid in tx_ids_str.split(","):
+            if tid == "":
+                continue
+            tx_ids.append(bytes32.from_hexstr(tid))
+        if len(tx_ids) == 0:
+            print("Transaction ID is required.")
+            return
+        if fee < 0:
+            print("Batch fee cannot be negative.")
+            return
+        response = await wallet_client.spend_withdraw_coins(tx_ids, int(fee * units["xxch"]), force)
+        print(str(response))

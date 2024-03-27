@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Tuple
 from xxch.types.blockchain_format.program import Program
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.condition_opcodes import ConditionOpcode
-from xxch.types.stake_value import get_stake_value
+from xxch.types.stake_value import get_stake_value_new
 from xxch.util.ints import uint16
 from xxch.util.misc import VersionedBlob
 from xxch.wallet.payment import Payment
@@ -16,7 +16,7 @@ from xxch.wallet.util.wallet_types import RemarkDataType
 
 class StakePuzzleDecorator:
     """
-    This class is a wrapper for staking puzzles. It allows us to add Staking characteristics to the inner puzzle.
+    This class is a wrapper for stake puzzles. It allows us to add Stake characteristics to the inner puzzle.
     """
 
     stake_type: uint16
@@ -32,7 +32,7 @@ class StakePuzzleDecorator:
         return self
 
     def decorate(self, inner_puzzle: Program) -> Program:
-        # We don't wrap anything for the Staking
+        # We don't wrap anything for the Stake
         return inner_puzzle
 
     def decorate_target_puzzle_hash(
@@ -43,7 +43,7 @@ class StakePuzzleDecorator:
         return (
             self.decorate(inner_puzzle),
             create_stake_merkle_puzzle(
-                get_stake_value(self.stake_type, self.is_stake_farm).time_lock, self.recipient_puzzle_hash
+                get_stake_value_new(self.stake_type, self.is_stake_farm).time_lock, self.recipient_puzzle_hash
             ).get_tree_hash(),
         )
 
@@ -54,7 +54,7 @@ class StakePuzzleDecorator:
         if len(primaries) == 1:
             stake_puzzle_hash = primaries[0].puzzle_hash
             metadata = StakeMetadata(
-                self.stake_type, self.is_stake_farm, stake_puzzle_hash, self.recipient_puzzle_hash
+                self.stake_type + 20, self.is_stake_farm, stake_puzzle_hash, self.recipient_puzzle_hash
             )
             remark_condition = Program.to(
                 [

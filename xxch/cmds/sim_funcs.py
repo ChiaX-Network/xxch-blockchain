@@ -8,16 +8,17 @@ from random import randint
 from typing import Any, Dict, List, Optional
 
 from aiohttp import ClientConnectorError
-from blspy import PrivateKey
+from chia_rs import PrivateKey
 
 from xxch.cmds.cmds_util import get_any_service_client
 from xxch.cmds.start_funcs import async_start
 from xxch.consensus.coinbase import create_puzzlehash_for_pk
+from xxch.server.outbound_message import NodeType
 from xxch.simulator.simulator_full_node_rpc_client import SimulatorFullNodeRpcClient
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.coin_record import CoinRecord
 from xxch.util.bech32m import decode_puzzle_hash, encode_puzzle_hash
-from xxch.util.config import load_config, save_config
+from xxch.util.config import load_config, save_config, set_peer_info
 from xxch.util.errors import KeychainFingerprintExists
 from xxch.util.ints import uint32
 from xxch.util.keychain import Keychain, bytes_to_mnemonic
@@ -83,16 +84,14 @@ def create_xxch_directory(
             # set ports and networks, we don't want to cause a port conflict.
             port_offset = randint(1, 20000)
             config["daemon_port"] -= port_offset
-            config["network_overrides"]["config"]["simulator0"]["default_full_node_port"] = 38444 + port_offset
+            config["network_overrides"]["config"]["simulator0"]["default_full_node_port"] = 24333 + port_offset
             # wallet
-            config["wallet"]["port"] += port_offset
             config["wallet"]["rpc_port"] += port_offset
             # full node
             config["full_node"]["port"] -= port_offset
             config["full_node"]["rpc_port"] += port_offset
             # connect wallet to full node
-            config["wallet"]["full_node_peer"]["port"] = config["full_node"]["port"]
-            config["full_node"]["wallet_peer"]["port"] = config["wallet"]["port"]
+            set_peer_info(config["wallet"], peer_type=NodeType.FULL_NODE, peer_port=config["full_node"]["port"])
             # ui
             config["ui"]["daemon_port"] = config["daemon_port"]
         else:

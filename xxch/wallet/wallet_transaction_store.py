@@ -46,21 +46,19 @@ class WalletTransactionStore:
         self.db_wrapper = db_wrapper
         async with self.db_wrapper.writer_maybe_transaction() as conn:
             await conn.execute(
-                (
-                    "CREATE TABLE IF NOT EXISTS transaction_record("
-                    " transaction_record blob,"
-                    " bundle_id text PRIMARY KEY,"  # NOTE: bundle_id is being stored as bytes, not hex
-                    " confirmed_at_height bigint,"
-                    " created_at_time bigint,"
-                    " to_puzzle_hash text,"
-                    " amount blob,"
-                    " fee_amount blob,"
-                    " confirmed int,"
-                    " sent int,"
-                    " wallet_id bigint,"
-                    " trade_id text,"
-                    " type int)"
-                )
+                "CREATE TABLE IF NOT EXISTS transaction_record("
+                " transaction_record blob,"
+                " bundle_id text PRIMARY KEY,"  # NOTE: bundle_id is being stored as bytes, not hex
+                " confirmed_at_height bigint,"
+                " created_at_time bigint,"
+                " to_puzzle_hash text,"
+                " amount blob,"
+                " fee_amount blob,"
+                " confirmed int,"
+                " sent int,"
+                " wallet_id bigint,"
+                " trade_id text,"
+                " type int)"
             )
 
             # Useful for reorg lookups
@@ -121,8 +119,8 @@ class WalletTransactionStore:
                     record.confirmed_at_height,
                     record.created_at_time,
                     record.to_puzzle_hash.hex(),
-                    bytes(record.amount),
-                    bytes(record.fee_amount),
+                    record.amount.stream_to_bytes(),
+                    record.fee_amount.stream_to_bytes(),
                     int(record.confirmed),
                     record.sent,
                     record.wallet_id,
@@ -228,11 +226,7 @@ class WalletTransactionStore:
         current_time = int(time.time())
         async with self.db_wrapper.reader_no_transaction() as conn:
             rows = await conn.execute_fetchall(
-                "SELECT transaction_record from transaction_record WHERE confirmed=0 AND type not in (?,?)",
-                (
-                    TransactionType.INCOMING_STAKE_FARM_RECEIVE.value,
-                    TransactionType.INCOMING_STAKE_LOCK_RECEIVE.value,
-                ),
+                "SELECT transaction_record from transaction_record WHERE confirmed=0",
             )
         records = []
 
@@ -269,8 +263,8 @@ class WalletTransactionStore:
             stake_farm_int = TransactionType.STAKE_FARM_REWARD.value
             stake_lock_int = TransactionType.STAKE_LOCK_REWARD.value
             rows = await conn.execute_fetchall(
-                "SELECT transaction_record from transaction_record WHERE confirmed=1 AND type in (?,?,?,?)",
-                (fee_int, pool_int, stake_farm_int, stake_lock_int,),
+                "SELECT transaction_record from transaction_record WHERE confirmed=1 and type in (?,?,?,?)",
+                (fee_int, pool_int, stake_farm_int, stake_lock_int),
             )
         return await self._get_new_tx_records_from_old([TransactionRecordOld.from_bytes(row[0]) for row in rows])
 
@@ -445,12 +439,12 @@ class WalletTransactionStore:
         async with self.db_wrapper.reader_no_transaction() as conn:
             valid_times: Dict[bytes32, ConditionValidTimes] = {}
             chunked_records: List[List[TransactionRecordOld]] = [
-                old_records[i: min(len(old_records), i + self.db_wrapper.host_parameter_limit)]
+                old_records[i : min(len(old_records), i + self.db_wrapper.host_parameter_limit)]
                 for i in range(0, len(old_records), self.db_wrapper.host_parameter_limit)
             ]
             for records_chunk in chunked_records:
                 cursor = await conn.execute(
-                    f"SELECT txid, valid_times from tx_times WHERE txid IN ({','.join('?' * len(records_chunk))})",
+                    f"SELECT txid, valid_times from tx_times WHERE txid IN ({','.join('?' *  len(records_chunk))})",
                     tuple(tx.name for tx in records_chunk),
                 )
                 valid_times = {
@@ -485,7 +479,7 @@ class WalletTransactionStore:
                 f"SELECT transaction_record FROM transaction_record WHERE wallet_id=?{type_str}{confirmed_str}",
                 (wallet_id,),
             )
-        return [TransactionRecordOld.from_bytes(row[0]) for row in rows]
+        return [ TransactionRecordOld.from_bytes(row[0]) for row in rows ]
 
     async def get_stake_rewards(self, is_stake_farm: bool = True) -> int:
         """

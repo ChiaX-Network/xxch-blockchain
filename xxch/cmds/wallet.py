@@ -1554,7 +1554,7 @@ def approve_r_cats_cmd(
     )
 
 
-@wallet_cmd.command("find_pool_nft", short_help="fnd nft xxch")
+@wallet_cmd.command("find_pool_nft", short_help="fnd nft greentc")
 @click.option(
     "-wp",
     "--wallet-rpc-port",
@@ -1566,7 +1566,7 @@ def approve_r_cats_cmd(
 @click.option(
     "-l",
     "--launcher-id",
-    help="Set the launcher id, you should get it from xxch wallet",
+    help="Set the launcher id, you should get it from greentc wallet",
     type=str,
     required=True
 )
@@ -1577,7 +1577,7 @@ def approve_r_cats_cmd(
     type=str,
     default="",
 )
-def recover_cmd(
+def find_pool_nft_cmd(
     wallet_rpc_port: Optional[int],
     fingerprint: int,
     launcher_id: str,
@@ -1595,7 +1595,7 @@ def recover_cmd(
     )
 
 
-@wallet_cmd.command("recover_pool_nft", short_help="recover nft xxch to wallet")
+@wallet_cmd.command("recover_pool_nft", short_help="recover nft greentc to wallet")
 @click.option(
     "-wp",
     "--wallet-rpc-port",
@@ -1607,7 +1607,7 @@ def recover_cmd(
 @click.option(
     "-l",
     "--launcher-id",
-    help="Set the launcher id, you should get it from xxch wallet",
+    help="Set the launcher id, you should get it from greentc wallet",
     type=str,
     required=True
 )
@@ -1618,11 +1618,15 @@ def recover_cmd(
     type=str,
     default="",
 )
-def recover_cmd(
+@click.option(
+    "-m", "--fee", type=str, default=0, show_default=True, help="Blockchain fee for approval transaction, in XXCH"
+)
+def recover_pool_nft_cmd(
     wallet_rpc_port: Optional[int],
     fingerprint: int,
     launcher_id: str,
     contract_address: str,
+    fee: str,
 ) -> None:
     from .stake_funcs import recover_pool_nft
 
@@ -1632,5 +1636,6 @@ def recover_cmd(
             fp=fingerprint,
             launcher_id=launcher_id,
             contract_address=contract_address,
+            fee=Decimal(fee),
         )
     )

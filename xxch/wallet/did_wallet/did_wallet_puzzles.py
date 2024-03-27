@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from blspy import G1Element
+from chia_rs import G1Element
 
 from xxch.types.blockchain_format.coin import Coin
 from xxch.types.blockchain_format.program import Program
@@ -181,9 +181,9 @@ def check_is_did_puzzle(puzzle: Program) -> bool:
 
 def metadata_to_program(metadata: Dict) -> Program:
     """
-    Convert the metadata dict to a Xxchlisp program
+    Convert the metadata dict to a Chialisp program
     :param metadata: User defined metadata
-    :return: Xxchlisp program
+    :return: Chialisp program
     """
     kv_list = []
     for key, value in metadata.items():
@@ -191,10 +191,10 @@ def metadata_to_program(metadata: Dict) -> Program:
     return Program.to(kv_list)
 
 
-def program_to_metadata(program: Program) -> Dict:
+def did_program_to_metadata(program: Program) -> Dict:
     """
     Convert a program to a metadata dict
-    :param program: Xxchlisp program contains the metadata
+    :param program: Chialisp program contains the metadata
     :return: Metadata dict
     """
     metadata = {}

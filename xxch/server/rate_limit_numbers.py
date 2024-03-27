@@ -155,6 +155,8 @@ rate_limits = {
             ProtocolMessageTypes.respond_stake_coefficients: RLSettings(200, 2048),
             ProtocolMessageTypes.request_stake_farm_count: RLSettings(500, 100),
             ProtocolMessageTypes.respond_stake_farm_count: RLSettings(500, 100),
+            ProtocolMessageTypes.request_coin_records_by_puzzle_hash: RLSettings(500, 100),
+            ProtocolMessageTypes.respond_coin_records_by_puzzle_hash: RLSettings(500, 100),
         },
     },
     2: {

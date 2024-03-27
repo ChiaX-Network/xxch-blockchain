@@ -44,7 +44,8 @@ class ConsensusConstants:
     AGG_SIG_ME_ADDITIONAL_DATA: bytes
     GENESIS_PRE_FARM_POOL_PUZZLE_HASH: bytes32  # The block at height must pay out to this pool puzzle hash
     GENESIS_PRE_FARM_FARMER_PUZZLE_HASH: bytes32  # The block at height must pay out to this farmer puzzle hash
-    GENESIS_PRE_FARM_COMMUNITY_PUZZLE_HASH: bytes32  # The block at height must pay out to this community puzzle hash
+    GENESIS_COMMUNITY_PUZZLE_HASH: bytes32  # The block at height must pay out to this community puzzle hash
+    FEES_PUZZLE_HASH: bytes32  # The blockat height must pay out to this fee puzzle hash
     MAX_VDF_WITNESS_SIZE: int  # The maximum number of classgroup elements within an n-wesolowski proof
     # Size of mempool = 10x the size of block
     MEMPOOL_BLOCK_BUFFER: int
@@ -63,6 +64,9 @@ class ConsensusConstants:
     MAX_GENERATOR_REF_LIST_SIZE: uint32
     POOL_SUB_SLOT_ITERS: uint64
 
+    # soft fork initiated in 1.8.0 release
+    SOFT_FORK2_HEIGHT: uint32
+
     # the hard fork planned with the 2.0 release
     # this is the block with the first plot filter adjustment
     HARD_FORK_HEIGHT: uint32
@@ -73,7 +77,7 @@ class ConsensusConstants:
     PLOT_FILTER_64_HEIGHT: uint32
     PLOT_FILTER_32_HEIGHT: uint32
 
-    def replace_str_to_bytes(self, **changes: Any) -> "ConsensusConstants":
+    def replace_str_to_bytes(self, **changes: Any) -> ConsensusConstants:
         """
         Overrides str (hex) values with bytes.
         """
@@ -90,4 +94,5 @@ class ConsensusConstants:
             else:
                 filtered_changes[k] = v
 
-        return dataclasses.replace(self, **filtered_changes)
+        # TODO: this is too magical here and is really only used for configuration unmarshalling
+        return dataclasses.replace(self, **filtered_changes)  # type: ignore[arg-type]

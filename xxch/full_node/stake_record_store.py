@@ -8,9 +8,9 @@ import typing_extensions
 
 from xxch.types.blockchain_format.sized_bytes import bytes32, bytes48
 from xxch.types.stake_record import StakeRecord, StakeRecordThin
-from xxch.types.stake_value import STAKE_FARM_COUNT
+from xxch.types.stake_value import STAKE_FARM_COUNT, get_stake_value_old
 from xxch.util.db_wrapper import SQLITE_MAX_VARIABLE_NUMBER, DBWrapper2
-from xxch.util.ints import uint32, uint64
+from xxch.util.ints import uint32, uint64, uint128
 from xxch.util.lru_cache import LRUCache
 from xxch.util.misc import to_batches
 
@@ -68,6 +68,18 @@ class StakeRecordStore:
 
             log.info("DB: Creating index stake puzzle_hash")
             await conn.execute("CREATE INDEX IF NOT EXISTS puzzle_hash on stake_record(puzzle_hash)")
+
+            async with conn.execute(
+                "SELECT coin_name, stake_type, is_stake_farm, coefficient FROM stake_record WHERE stake_type<19",
+            ) as cursor:
+                record_list: List[Tuple[str, bytes]] = []
+                for row in await cursor.fetchall():
+                    coefficient = get_stake_value_old(row[1], row[2]).coefficient
+                    if coefficient != str(row[3]):
+                        record_list.append((coefficient, row[0]))
+                if len(record_list) > 0:
+                    for v in record_list:
+                        await conn.execute("UPDATE stake_record SET coefficient=? WHERE coin_name=?", v)
 
         return self
 
@@ -140,43 +152,33 @@ class StakeRecordStore:
 
     async def get_stake_farm_count(self, stake_puzzle_hash: bytes32, timestamp: uint64) -> int:
         async with self.db_wrapper.reader_no_transaction() as conn:
-            rows = list(
-                await conn.execute_fetchall(
-                    "SELECT puzzle_hash FROM stake_record INDEXED BY stake_puzzle_hash"
-                    " WHERE is_stake_farm=1 AND stake_puzzle_hash=? AND expiration>? GROUP BY puzzle_hash",
-                    (stake_puzzle_hash, timestamp),
-                )
-            )
-        if len(rows) == 0 or rows[0][0] is None:
-            return 0
-        return len(rows)
-    #
-    # async def get_stake_amount_sum(self, timestamp: uint64, is_stake_farm: bool) -> Tuple[int, float, int]:
-    #     async with self.db_wrapper.reader_no_transaction() as conn:
-    #         rows = list(
-    #             await conn.execute_fetchall(
-    #                 "SELECT SUM(amount),SUM(amount*coefficient) FROM stake_record WHERE "
-    #                 "is_stake_farm=? and expiration>?", (1 if is_stake_farm else 0, timestamp),
-    #             )
-    #         )
-    #     if len(rows) == 0 or rows[0][0] is None:
-    #         return 0, 0
-    #     return int(rows[0][0]), float(rows[0][1])
+            async with conn.execute(
+                "SELECT SUM(1) FROM stake_record INDEXED BY stake_puzzle_hash"
+                " WHERE is_stake_farm=1 AND stake_puzzle_hash=? AND expiration>? GROUP BY puzzle_hash",
+                (stake_puzzle_hash, timestamp),
+            ) as cursor:
+                row = await cursor.fetchone()
 
-    async def get_stake_amount_total(self, timestamp: uint64) -> Tuple[int, float, int]:
+            if row is not None:
+                [count] = row
+                return int(count)
+            return 0
+
+    async def get_stake_amount_total(self, timestamp: uint64) -> Tuple[int, float, int, float]:
         async with self.db_wrapper.reader_no_transaction() as conn:
             async with conn.execute(
                 "SELECT is_stake_farm,SUM(amount),SUM(amount*coefficient) FROM stake_record "
                 "WHERE expiration>? GROUP BY is_stake_farm", (timestamp,),
             ) as cursor:
-                stake_farm, stake_farm_calc, stake_lock = 0, 0.0, 0
+                stake_farm, stake_farm_calc, stake_lock, stake_lock_calc = 0, 0.0, 0, 0.0
                 for row in await cursor.fetchall():
                     if int(row[0]) == 0:
                         stake_lock = int(row[1])
+                        stake_lock_calc = int(row[2])
                     else:
                         stake_farm = int(row[1])
                         stake_farm_calc = float(row[2])
-        return stake_farm, stake_farm_calc, stake_lock
+        return stake_farm, stake_farm_calc, stake_lock, stake_lock_calc
 
     async def get_stake_farm_records_thin(
         self, stake_puzzle_hash: bytes32, height: uint32, timestamp: uint64
@@ -238,4 +240,41 @@ class StakeRecordStore:
                         row[5],
                     ))
                 self.stake_lock_cache.put(stake_key, records)
+                return records
+
+    async def get_stake_lock_amount_total(self, timestamp: uint64) -> float:
+        async with self.db_wrapper.reader_no_transaction() as conn:
+            async with conn.execute(
+                "SELECT SUM(amount*coefficient) FROM stake_record "
+                "WHERE is_stake_farm = 0 AND expiration>?", (timestamp,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row is not None and row[0] is not None:
+                    return float(row[0])
+            return 0.0
+
+    async def get_stake_records(
+            self, confirmed_index: uint32
+    ) -> List[StakeRecord]:
+        async with self.db_wrapper.reader_no_transaction() as conn:
+            async with conn.execute(
+                "SELECT coin_name,confirmed_index,stake_puzzle_hash,puzzle_hash,amount,"
+                "stake_type,is_stake_farm,coefficient,expiration FROM stake_record"
+                " INDEXED BY stake_confirmed_index WHERE confirmed_index=?",
+                (confirmed_index,),
+            ) as cursor:
+                records: List[StakeRecord] = []
+                for row in await cursor.fetchall():
+                    records.append(StakeRecord(
+                        bytes32(row[0]),
+                        uint64(int(row[4])),
+                        int(row[1]),
+                        0,
+                        bytes32(row[2]),
+                        bytes32(row[3]),
+                        int(row[5]),
+                        int(row[6]),
+                        float(row[7]),
+                        int(row[8]),
+                    ))
                 return records

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 from xxch.types.blockchain_format.sized_bytes import bytes32
-from xxch.types.stake_value import get_stake_value
+from xxch.types.stake_value import get_stake_value_old
 from xxch.util.ints import uint16, uint64
 from xxch.util.streamable import Streamable, streamable
 
@@ -18,7 +18,7 @@ class StakeMetadata(Streamable):
 
     @property
     def time_lock(self) -> uint64:
-        return get_stake_value(self.stake_type, self.is_stake_farm).time_lock
+        return get_stake_value_old(self.stake_type, self.is_stake_farm).time_lock
 
 
 class StakeVersion(IntEnum):
@@ -28,5 +28,6 @@ class StakeVersion(IntEnum):
 @streamable
 @dataclass(frozen=True)
 class AutoWithdrawStakeSettings(Streamable):
+    enabled: bool = False
     tx_fee: uint64 = uint64(0)
     batch_size: uint16 = uint16(50)

@@ -15,7 +15,7 @@ def db_cmd() -> None:
     pass
 
 
-@db_cmd.command("upgrade", help="upgrade a v1 database to v2")
+@db_cmd.command("upgrade", help="upgrade a v2 database to v2_r1")
 @click.option("--input", "in_db_path", default=None, type=click.Path(), help="specify input database file")
 @click.option("--output", "out_db_path", default=None, type=click.Path(), help="specify output database file")
 @click.option(

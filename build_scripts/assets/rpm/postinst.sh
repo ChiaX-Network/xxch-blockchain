@@ -4,4 +4,4 @@
 set -e
 
 ln -s /opt/xxch/resources/app.asar.unpacked/daemon/xxch /usr/bin/xxch || true
-ln -s /opt/xxch/xxch-blockchain /usr/bin/xxch-blockchain || true
+ln -s /opt/chiax-network/xxch-blockchain /usr/bin/xxch-blockchain || true

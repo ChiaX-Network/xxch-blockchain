@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import multiprocessing
@@ -9,10 +10,10 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Optional, Set, Tuple, Union, cast
 
 import aiosqlite
-from blspy import AugSchemeMPL, G1Element, G2Element, PrivateKey
+from chia_rs import AugSchemeMPL, G1Element, G2Element, PrivateKey
 from packaging.version import Version
 
 from xxch.consensus.blockchain import AddBlockResult
@@ -33,6 +34,9 @@ from xxch.protocols.wallet_protocol import (
     RespondToCoinUpdates,
     SendTransaction,
     RequestStakeFarmCount,
+    RespondStakeFarmCount,
+    RequestCoinRecords,
+    RespondCoinRecords,
 )
 from xxch.rpc.rpc_server import StateChangedProtocol, default_get_connections
 from xxch.server.node_discovery import WalletPeers
@@ -42,6 +46,7 @@ from xxch.server.server import XxchServer
 from xxch.server.ws_connection import WSXxchConnection
 from xxch.types.blockchain_format.coin import Coin
 from xxch.types.blockchain_format.sized_bytes import bytes32
+from xxch.types.coin_record import CoinRecord
 from xxch.types.header_block import HeaderBlock
 from xxch.types.mempool_inclusion_status import MempoolInclusionStatus
 from xxch.types.spend_bundle import SpendBundle
@@ -54,6 +59,7 @@ from xxch.util.config import (
 )
 from xxch.util.db_wrapper import manage_connection
 from xxch.util.errors import KeychainIsEmpty, KeychainIsLocked, KeychainKeyNotFound, KeychainProxyConnectionFailure
+from xxch.util.hash import std_hash
 from xxch.util.ints import uint16, uint32, uint64, uint128, uint8
 from xxch.util.keychain import Keychain
 from xxch.util.misc import to_batches
@@ -111,6 +117,11 @@ class Balance(Streamable):
 
 @dataclasses.dataclass
 class WalletNode:
+    if TYPE_CHECKING:
+        from xxch.rpc.rpc_server import RpcServiceProtocol
+
+        _protocol_check: ClassVar[RpcServiceProtocol] = cast("WalletNode", None)
+
     config: Dict[str, Any]
     root_path: Path
     constants: ConsensusConstants
@@ -145,6 +156,16 @@ class WalletNode:
     _process_new_subscriptions_task: Optional[asyncio.Task[None]] = None
     _retry_failed_states_task: Optional[asyncio.Task[None]] = None
     _secondary_peer_sync_task: Optional[asyncio.Task[None]] = None
+    _tx_messages_in_progress: Dict[bytes32, List[bytes32]] = dataclasses.field(default_factory=dict)
+
+    @contextlib.asynccontextmanager
+    async def manage(self) -> AsyncIterator[None]:
+        await self._start()
+        try:
+            yield
+        finally:
+            self._close()
+            await self._await_closed()
 
     @property
     def keychain_proxy(self) -> KeychainProxy:
@@ -302,7 +323,7 @@ class WalletNode:
         async with manage_connection(db_path) as conn:
             self.log.info("Resetting wallet sync data...")
             rows = list(await conn.execute_fetchall("SELECT name FROM sqlite_master WHERE type='table'"))
-            names = set([x[0] for x in rows])
+            names = {x[0] for x in rows}
             names = names - set(required_tables)
             for name in names:
                 for ignore_name in ignore_tables:
@@ -476,8 +497,16 @@ class WalletNode:
             for peer in full_nodes:
                 if peer.peer_node_id in sent_peers:
                     continue
+                msg_name: bytes32 = std_hash(msg.data)
+                if (
+                    peer.peer_node_id in self._tx_messages_in_progress
+                    and msg_name in self._tx_messages_in_progress[peer.peer_node_id]
+                ):
+                    continue
                 self.log.debug(f"sending: {msg}")
                 await peer.send_message(msg)
+                self._tx_messages_in_progress.setdefault(peer.peer_node_id, [])
+                self._tx_messages_in_progress[peer.peer_node_id].append(msg_name)
 
     async def _messages_to_resend(self) -> List[Tuple[Message, Set[bytes32]]]:
         if self._wallet_state_manager is None or self._shut_down:
@@ -583,7 +612,8 @@ class WalletNode:
                     peer = item.data[1]
                     assert peer is not None
                     await self.new_peak_wallet(new_peak, peer)
-                    await self.wallet_state_manager.auto_withdraw_stake_coins()
+                    if await self.wallet_state_manager.synced() and self.config.get("auto_withdraw_stake", {}).get("enabled", False):
+                        await self.wallet_state_manager.auto_withdraw_stake_coins()
                     # Check if any coin needs auto spending
                     if self.config.get("auto_claim", {}).get("enabled", False):
                         await self.wallet_state_manager.auto_claim_coins()
@@ -641,7 +671,11 @@ class WalletNode:
     def initialize_wallet_peers(self) -> None:
         self.server.on_connect = self.on_connect
         network_name = self.config["selected_network"]
-
+        try:
+            default_port = self.config["network_overrides"]["config"][network_name]["default_full_node_port"]
+        except KeyError:
+            self.log.info("Default port field not found in config.")
+            default_port = None
         connect_to_unknown_peers = self.config.get("connect_to_unknown_peers", True)
         testing = self.config.get("testing", False)
         if self.wallet_peers is None and connect_to_unknown_peers and not testing:
@@ -660,7 +694,7 @@ class WalletNode:
                 self.config.get("dns_servers", ["dns-introducer.xxch.cc"]),
                 self.config["peer_connect_interval"],
                 network_name,
-                None,
+                default_port,
                 self.log,
             )
             asyncio.create_task(self.wallet_peers.start())
@@ -674,6 +708,8 @@ class WalletNode:
             self.peer_caches.pop(peer.peer_node_id)
         if peer.peer_node_id in self.synced_peers:
             self.synced_peers.remove(peer.peer_node_id)
+        if peer.peer_node_id in self._tx_messages_in_progress:
+            del self._tx_messages_in_progress[peer.peer_node_id]
 
         self.wallet_state_manager.state_changed("close_connection")
 
@@ -1683,12 +1719,35 @@ class WalletNode:
         self, stake_puzzle_hash: bytes32
     ) -> Optional[uint8]:
         for peer in self.get_full_node_peers_in_order():
-            stake_count = await peer.call_api(
+            response: Optional[RespondStakeFarmCount] = await peer.call_api(
                 FullNodeAPI.request_stake_farm_count, RequestStakeFarmCount(stake_puzzle_hash)
             )
-            if stake_count is not None:
-                return stake_count.count
+            if response is not None:
+                return response.count
         return None
+
+    async def request_coin_records_by_puzzle_hash(
+        self,
+        puzzle_hash: bytes32,
+        include_spent_coins: bool = False,
+        limit: Optional[uint32] = None,
+        start_height: Optional[uint32] = None,
+        end_height: Optional[uint32] = None,
+    ) -> List[CoinRecord]:
+        for peer in self.get_full_node_peers_in_order():
+            response: Optional[RespondCoinRecords] = await peer.call_api(
+                FullNodeAPI.request_coin_records_by_puzzle_hash,
+                RequestCoinRecords(
+                    include_spent_coins=include_spent_coins,
+                    puzzle_hash=puzzle_hash,
+                    limit=limit,
+                    start_height=start_height,
+                    end_height=end_height,
+                ),
+            )
+            if response is not None:
+                return response.coinRecords
+        return []
 
     def set_auto_withdraw_stake(self, auto_withdraw_config: AutoWithdrawStakeSettings) -> Dict[str, Any]:
         if auto_withdraw_config.batch_size < 1:

@@ -4,8 +4,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Set, Tuple, cast
 
-from blspy import AugSchemeMPL, G1Element, G2Element
-from xxch.wallet.util.puzzle_decorator_type import PuzzleDecoratorType
+from chia_rs import AugSchemeMPL, G1Element, G2Element
 from typing_extensions import Unpack
 
 from xxch.types.announcement import Announcement
@@ -14,6 +13,7 @@ from xxch.types.blockchain_format.program import Program
 from xxch.types.blockchain_format.serialized_program import SerializedProgram
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.coin_spend import CoinSpend
+from xxch.types.signing_mode import CHIP_0002_SIGN_MESSAGE_PREFIX, SigningMode
 from xxch.types.spend_bundle import SpendBundle
 from xxch.util.hash import std_hash
 from xxch.util.ints import uint32, uint64, uint128
@@ -41,6 +41,7 @@ from xxch.wallet.puzzles.puzzle_utils import (
 from xxch.wallet.transaction_record import TransactionRecord
 from xxch.wallet.util.compute_memos import compute_memos
 from xxch.wallet.util.puzzle_decorator import PuzzleDecoratorManager
+from xxch.wallet.util.puzzle_decorator_type import PuzzleDecoratorType
 from xxch.wallet.util.transaction_type import TransactionType
 from xxch.wallet.util.tx_config import CoinSelectionConfig, TXConfig
 from xxch.wallet.util.wallet_types import WalletIdentifier, WalletType
@@ -51,9 +52,6 @@ from xxch.wallet.wallet_protocol import GSTOptionalArgs, WalletProtocol
 if TYPE_CHECKING:
     from xxch.server.ws_connection import WSXxchConnection
     from xxch.wallet.wallet_state_manager import WalletStateManager
-
-# https://github.com/Chia-Network/chips/blob/80e4611fe52b174bf1a0382b9dff73805b18b8c6/CHIPs/chip-0002.md#signmessage
-CHIP_0002_SIGN_MESSAGE_PREFIX = "Xxch Signed Message"
 
 
 class Wallet:
@@ -405,19 +403,21 @@ class Wallet:
         self.log.debug(f"Spends is {spends}")
         return spends
 
-    async def sign_message(
-        self, message: str, puzzle_hash: bytes32, is_hex: bool = False
-    ) -> Tuple[G1Element, G2Element]:
+    async def sign_message(self, message: str, puzzle_hash: bytes32, mode: SigningMode) -> Tuple[G1Element, G2Element]:
         # CHIP-0002 message signing as documented at:
         # https://github.com/Chia-Network/chips/blob/80e4611fe52b174bf1a0382b9dff73805b18b8c6/CHIPs/chip-0002.md#signmessage
         private = await self.wallet_state_manager.get_private_key(puzzle_hash)
         synthetic_secret_key = calculate_synthetic_secret_key(private, DEFAULT_HIDDEN_PUZZLE_HASH)
         synthetic_pk = synthetic_secret_key.get_g1()
-        if is_hex:
-            puzzle: Program = Program.to((CHIP_0002_SIGN_MESSAGE_PREFIX, bytes.fromhex(message)))
+        if mode == SigningMode.CHIP_0002_HEX_INPUT:
+            hex_message: bytes = Program.to((CHIP_0002_SIGN_MESSAGE_PREFIX, bytes.fromhex(message))).get_tree_hash()
+        elif mode == SigningMode.BLS_MESSAGE_AUGMENTATION_UTF8_INPUT:
+            hex_message = bytes(message, "utf-8")
+        elif mode == SigningMode.BLS_MESSAGE_AUGMENTATION_HEX_INPUT:
+            hex_message = bytes.fromhex(message)
         else:
-            puzzle = Program.to((CHIP_0002_SIGN_MESSAGE_PREFIX, message))
-        return synthetic_pk, AugSchemeMPL.sign(synthetic_secret_key, puzzle.get_tree_hash())
+            hex_message = Program.to((CHIP_0002_SIGN_MESSAGE_PREFIX, message)).get_tree_hash()
+        return synthetic_pk, AugSchemeMPL.sign(synthetic_secret_key, hex_message)
 
     async def generate_signed_transaction(
         self,
@@ -434,7 +434,7 @@ class Wallet:
         puzzle_decorator_override: Optional[List[Dict[str, Any]]] = None,
         extra_conditions: Tuple[Condition, ...] = tuple(),
         **kwargs: Unpack[GSTOptionalArgs],
-    ) -> TransactionRecord:
+    ) -> List[TransactionRecord]:
         origin_id: Optional[bytes32] = kwargs.get("origin_id", None)
         negative_change_allowed: bool = kwargs.get("negative_change_allowed", False)
         """
@@ -479,31 +479,34 @@ class Wallet:
         else:
             assert output_amount == input_amount
 
-        tx_type = TransactionType.OUTGOING_TX.value
         if puzzle_decorator_override is not None and (
             puzzle_decorator_override[0]["decorator"] == PuzzleDecoratorType.STAKE.name
         ) and puzzle_decorator_override[0]["is_stake_farm"]:
             tx_type = TransactionType.OUTGOING_STAKE_FARM.value
+        else:
+            tx_type = TransactionType.OUTGOING_TX.value
 
-        return TransactionRecord(
-            confirmed_at_height=uint32(0),
-            created_at_time=now,
-            to_puzzle_hash=puzzle_hash,
-            amount=uint64(non_change_amount),
-            fee_amount=uint64(fee),
-            confirmed=False,
-            sent=uint32(0),
-            spend_bundle=spend_bundle,
-            additions=add_list,
-            removals=rem_list,
-            wallet_id=self.id(),
-            sent_to=[],
-            trade_id=None,
-            type=uint32(tx_type),
-            name=spend_bundle.name(),
-            memos=list(compute_memos(spend_bundle).items()),
-            valid_times=parse_timelock_info(extra_conditions),
-        )
+        return [
+            TransactionRecord(
+                confirmed_at_height=uint32(0),
+                created_at_time=now,
+                to_puzzle_hash=puzzle_hash,
+                amount=uint64(non_change_amount),
+                fee_amount=uint64(fee),
+                confirmed=False,
+                sent=uint32(0),
+                spend_bundle=spend_bundle,
+                additions=add_list,
+                removals=rem_list,
+                wallet_id=self.id(),
+                sent_to=[],
+                trade_id=None,
+                type=uint32(tx_type),
+                name=spend_bundle.name(),
+                memos=list(compute_memos(spend_bundle).items()),
+                valid_times=parse_timelock_info(extra_conditions),
+            )
+        ]
 
     async def create_tandem_xxch_tx(
         self,
@@ -512,7 +515,7 @@ class Wallet:
         announcement_to_assert: Optional[Announcement] = None,
     ) -> TransactionRecord:
         xxch_coins = await self.select_coins(fee, tx_config.coin_selection_config)
-        xxch_tx = await self.generate_signed_transaction(
+        [xxch_tx] = await self.generate_signed_transaction(
             uint64(0),
             (await self.get_puzzle_hash(not tx_config.reuse_puzhash)),
             tx_config,

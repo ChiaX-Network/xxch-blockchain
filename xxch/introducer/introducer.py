@@ -1,21 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, ClassVar, Dict, List, Optional, cast
 
 from xxch.rpc.rpc_server import StateChangedProtocol, default_get_connections
 from xxch.server.introducer_peers import VettedPeer
 from xxch.server.outbound_message import NodeType
-from xxch.server.server import XxchServer
+from xxch.server.server import xxchServer
 from xxch.server.ws_connection import WSXxchConnection
 from xxch.util.ints import uint64
 
 
 class Introducer:
+    if TYPE_CHECKING:
+        from xxch.rpc.rpc_server import RpcServiceProtocol
+
+        _protocol_check: ClassVar[RpcServiceProtocol] = cast("Introducer", None)
+
     @property
-    def server(self) -> XxchServer:
+    def server(self) -> xxchServer:
         # This is a stop gap until the class usage is refactored such the values of
         # integral attributes are known at creation of the instance.
         if self._server is None:
@@ -27,19 +33,18 @@ class Introducer:
         self.max_peers_to_send = max_peers_to_send
         self.recent_peer_threshold = recent_peer_threshold
         self._shut_down = False
-        self._server: Optional[XxchServer] = None
+        self._server: Optional[xxchServer] = None
         self.log = logging.getLogger(__name__)
 
-    async def _start(self):
+    @contextlib.asynccontextmanager
+    async def manage(self) -> AsyncIterator[None]:
         self._vetting_task = asyncio.create_task(self._vetting_loop())
-
-    def _close(self):
-        self._shut_down = True
-        self._vetting_task.cancel()
-
-    async def _await_closed(self):
-        pass
-        # await self._vetting_task
+        try:
+            yield
+        finally:
+            self._shut_down = True
+            self._vetting_task.cancel()
+            # await self._vetting_task
 
     async def on_connect(self, peer: WSXxchConnection) -> None:
         pass
@@ -51,7 +56,7 @@ class Introducer:
     def get_connections(self, request_node_type: Optional[NodeType]) -> List[Dict[str, Any]]:
         return default_get_connections(server=self.server, request_node_type=request_node_type)
 
-    def set_server(self, server: XxchServer):
+    def set_server(self, server: xxchServer):
         self._server = server
 
     async def _vetting_loop(self):

@@ -6,7 +6,6 @@ import math
 import time
 import traceback
 from dataclasses import dataclass, field
-from secrets import token_bytes
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from aiohttp import ClientSession, WSCloseCode, WSMessage, WSMsgType
@@ -18,7 +17,11 @@ from typing_extensions import Protocol, final
 from xxch.cmds.init_funcs import xxch_full_version_str
 from xxch.protocols.protocol_message_types import ProtocolMessageTypes
 from xxch.protocols.protocol_state_machine import message_response_ok
-from xxch.protocols.protocol_timing import API_EXCEPTION_BAN_SECONDS, INTERNAL_PROTOCOL_ERROR_BAN_SECONDS
+from xxch.protocols.protocol_timing import (
+    API_EXCEPTION_BAN_SECONDS,
+    CONSENSUS_ERROR_BAN_SECONDS,
+    INTERNAL_PROTOCOL_ERROR_BAN_SECONDS,
+)
 from xxch.protocols.shared_protocol import Capability, Error, Handshake
 from xxch.server.api_protocol import ApiProtocol
 from xxch.server.capabilities import known_active_capabilities
@@ -27,7 +30,7 @@ from xxch.server.rate_limits import RateLimiter
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.peer_info import PeerInfo
 from xxch.util.api_decorators import get_metadata
-from xxch.util.errors import ApiError, Err, ProtocolError, TimestampError
+from xxch.util.errors import ApiError, ConsensusError, Err, ProtocolError, TimestampError
 from xxch.util.ints import int16, uint8, uint16
 from xxch.util.log_exceptions import log_exceptions
 
@@ -70,7 +73,7 @@ class WSXxchConnection:
     ws: WebSocket = field(repr=False)
     api: ApiProtocol = field(repr=False)
     local_type: NodeType
-    local_port: int
+    local_port: Optional[int]
     local_capabilities_for_handshake: List[Tuple[uint16, str]] = field(repr=False)
     local_capabilities: List[Capability]
     peer_info: PeerInfo
@@ -119,6 +122,7 @@ class WSXxchConnection:
         default_factory=create_default_last_message_time_dict,
         repr=False,
     )
+    xxch_full_version: Optional[Version] = None
 
     @classmethod
     def create(
@@ -126,7 +130,7 @@ class WSXxchConnection:
         local_type: NodeType,
         ws: WebSocket,
         api: ApiProtocol,
-        server_port: int,
+        server_port: Optional[int],
         log: logging.Logger,
         is_outbound: bool,
         received_message_callback: Optional[ConnectionCallback],
@@ -167,6 +171,7 @@ class WSXxchConnection:
             is_outbound=is_outbound,
             received_message_callback=received_message_callback,
             session=session,
+            xxch_full_version=Version(xxch_full_version_str()),
         )
 
     def _get_extra_info(self, name: str) -> Optional[Any]:
@@ -446,8 +451,12 @@ class WSXxchConnection:
                 self.log.error(f"Exception: {e} {type(e)}, closing connection {self.get_peer_logging()}. {tb}")
             else:
                 self.log.debug(f"Exception: {e} while closing connection")
+            if isinstance(e, ConsensusError):
+                ban_time = CONSENSUS_ERROR_BAN_SECONDS
+            else:
+                ban_time = API_EXCEPTION_BAN_SECONDS
             # TODO: actually throw one of the errors from errors.py and pass this to close
-            await self.close(API_EXCEPTION_BAN_SECONDS, WSCloseCode.PROTOCOL_ERROR, Err.UNKNOWN)
+            await self.close(ban_time, WSCloseCode.PROTOCOL_ERROR, Err.UNKNOWN)
         finally:
             if task_id in self.api_tasks:
                 self.api_tasks.pop(task_id)
@@ -457,7 +466,7 @@ class WSXxchConnection:
     async def incoming_message_handler(self) -> None:
         while True:
             message = await self.incoming_queue.get()
-            task_id: bytes32 = bytes32(token_bytes(32))
+            task_id: bytes32 = bytes32.secret()
             api_task = asyncio.create_task(self._api_call(message, task_id))
             self.api_tasks[task_id] = api_task
 
@@ -528,6 +537,9 @@ class WSXxchConnection:
         recv_method = getattr(class_for_type(self.local_type), recv_message_type.name)
         receive_metadata = get_metadata(recv_method)
         assert receive_metadata is not None, f"ApiMetadata unavailable for {recv_method}"
+        self.log.debug(
+            f"receive_metadata.message_class: {receive_metadata.message_class.__name__}"
+        )
         return receive_metadata.message_class.from_bytes(response.data)
 
     async def send_request(self, message_no_id: Message, timeout: int) -> Optional[Message]:
@@ -719,3 +731,6 @@ class WSXxchConnection:
 
     def has_capability(self, capability: Capability) -> bool:
         return capability in self.peer_capabilities
+
+    def is_old_version(self) -> bool:
+        return Version(self.version) < self.xxch_full_version

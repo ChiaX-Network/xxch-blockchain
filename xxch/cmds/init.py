@@ -42,7 +42,7 @@ def init_cmd(
     - Run `xxch init -c [directory]` on your remote harvester,
       where [directory] is the the copy of your Farming Machine CA directory
     - Get more details on remote harvester on Xxch wiki:
-      https://github.com/Chiax-Network/xxch-blockchain/wiki/Farming-on-many-machines
+      https://github.com/Chia-Network/chia-blockchain/wiki/Farming-on-many-machines
     """
     from pathlib import Path
 

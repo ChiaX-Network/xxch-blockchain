@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Union
 from xxch.types.blockchain_format.coin import Coin
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.coin_record import CoinRecord
+from xxch.types.stake_value import get_stake_value
 from xxch.util.ints import uint8, uint32, uint64
 from xxch.util.misc import VersionedBlob
 from xxch.wallet.puzzles.clawback.metadata import ClawbackMetadata, ClawbackVersion
@@ -63,12 +64,20 @@ class WalletCoinRecord:
         # TODO: Merge wallet_type and wallet_id into `wallet_identifier`, make `spent` an attribute based
         #  on `spent_height` make `WalletCoinRecord` streamable and use Streamable.to_json_dict as base here if we have
         #  streamable enums.
+        json_dict = None
+        if self.metadata is not None:
+            if self.coin_type == CoinType.STAKE:
+                metadata = self.parsed_metadata()
+                json_dict = metadata.to_json_dict()
+                json_dict["time_lock"] = metadata.time_lock
+            else:
+                json_dict = self.parsed_metadata().to_json_dict()
         return {
             **self.coin.to_json_dict(),
             "id": "0x" + self.name().hex(),
             "type": int(self.coin_type),
             "wallet_identifier": self.wallet_identifier().to_json_dict(),
-            "metadata": None if self.metadata is None else self.parsed_metadata().to_json_dict(),
+            "metadata": json_dict,
             "confirmed_height": self.confirmed_block_height,
             "spent_height": self.spent_block_height,
             "coinbase": self.coinbase,

@@ -9,6 +9,7 @@ import typing_extensions
 import zstd
 
 from xxch.consensus.block_record import BlockRecord
+from xxch.consensus.coinbase import create_puzzlehash_for_pk
 from xxch.types.blockchain_format.serialized_program import SerializedProgram
 from xxch.types.blockchain_format.sized_bytes import bytes32
 from xxch.types.full_block import FullBlock
@@ -349,6 +350,25 @@ class BlockStore:
             ret.append(all_blocks[hh])
         return ret
 
+    async def get_prev_hash(self, header_hash: bytes32) -> bytes32:
+        """
+        Returns the header hash preceeding the input header hash.
+        Throws an exception if the block is not present
+        """
+        cached = self.block_cache.get(header_hash)
+        if cached is not None:
+            return cached.prev_header_hash
+
+        async with self.db_wrapper.reader_no_transaction() as conn:
+            async with conn.execute(
+                "SELECT prev_hash FROM full_blocks WHERE header_hash=?",
+                (header_hash,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row is None:
+                    raise KeyError("missing block in chain")
+                return bytes32(row[0])
+
     async def get_block_bytes_by_hash(self, header_hashes: List[bytes32]) -> List[bytes]:
         """
         Returns a list of Full Blocks block blobs, ordered by the same order in which header_hashes are passed in.
@@ -555,16 +575,3 @@ class BlockStore:
         [count] = row
         return int(count)
 
-    async def get_reward_block_count(self, start: uint32, end: uint32, stake_puzzle_hash: bytes32) -> int:
-        async with self.db_wrapper.reader_no_transaction() as conn:
-            async with conn.execute(
-                "select count(*) from full_blocks INDEXED BY farm_puzzle_hash where farm_puzzle_hash=?"
-                " and in_main_chain=1 and height>? and height<?",
-                (stake_puzzle_hash, start, end),
-            ) as cursor:
-                row = await cursor.fetchone()
-
-        if row is not None:
-            [count] = row
-            return int(count)
-        return 0

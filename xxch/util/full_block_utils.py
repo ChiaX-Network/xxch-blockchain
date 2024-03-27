@@ -4,8 +4,7 @@ import io
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
-from blspy import G1Element, G2Element
-from chia_rs import serialized_length
+from chia_rs import G1Element, G2Element, serialized_length
 from chiabip158 import PyBIP158
 
 from xxch.types.blockchain_format.coin import Coin
@@ -127,8 +126,8 @@ def skip_proof_of_space(buf: memoryview) -> memoryview:
     buf = skip_g1_element(buf)  # farmer_public_key
     buf = skip_uint8(buf)  # size
     buf = skip_bytes(buf)  # proof
-    buf = skip_uint32(buf)  # staking_height
-    return skip_uint64(buf)  # staking_coefficient
+    buf = skip_uint32(buf)  # stake_height
+    return skip_uint64(buf)  # stake_coefficient
 
 
 def skip_reward_chain_block(buf: memoryview) -> memoryview:

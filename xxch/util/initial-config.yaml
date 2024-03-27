@@ -4,9 +4,11 @@ min_mainnet_k_size: 32
 ping_interval: 120
 self_hostname: &self_hostname "localhost"
 prefer_ipv6: False
+rpc_timeout: 300
 daemon_port: 22870
 daemon_max_message_size: 50000000 # maximum size of RPC message in bytes
 daemon_heartbeat: 300 # sets the heartbeat for ping/ping interval and timeouts
+daemon_allow_tls_1_2: False # if True, allow TLS 1.2 for daemon connections
 inbound_rate_limit_percent: 100
 outbound_rate_limit_percent: 30
 
@@ -26,17 +28,14 @@ network_overrides: &network_overrides
       GENESIS_PRE_FARM_POOL_PUZZLE_HASH: fcd909c1685850a7e341e246406aec79e58bc9ec0b09b02842dea9f166293fba
       MEMPOOL_BLOCK_BUFFER: 10
       MIN_PLOT_SIZE: 18
-      # planned 2.0 release is July 26, height 2965036 on testnet
-      # 1 week later
-      HARD_FORK_HEIGHT: 2997292
-      # November 2023
-      HARD_FORK_FIX_HEIGHT: 3426000
-      # another 2 weeks later
-      PLOT_FILTER_128_HEIGHT: 3061804
-      # 3 years later
-      PLOT_FILTER_64_HEIGHT: 8010796
-      # 3 years later
-      PLOT_FILTER_32_HEIGHT: 13056556
+      NETWORK_TYPE: 1
+      SUB_SLOT_ITERS_STARTING: 67108864
+      # Forks activated from the beginning on this network
+      HARD_FORK_HEIGHT: 0
+      HARD_FORK_FIX_HEIGHT: 0
+      PLOT_FILTER_128_HEIGHT: 6029568
+      PLOT_FILTER_64_HEIGHT: 11075328
+      PLOT_FILTER_32_HEIGHT: 16121088
   config:
     mainnet:
       address_prefix: "xxch"
@@ -46,7 +45,7 @@ network_overrides: &network_overrides
       default_full_node_port: 22988
 
 selected_network: &selected_network "mainnet"
-ALERTS_URL: https://www.xxch.cc/notify/mainnet_alert.txt
+ALERTS_URL: https://download.xxch.cc/notify/mainnet_alert.txt
 XXCH_ALERTS_PUBKEY: 89b7fd87cb56e926ecefb879a29aae308be01f31980569f6a75a69d2a9a69daefd71fb778d865f7c50d6c967e3025937
 
 # public ssl ca is included in source code
@@ -73,7 +72,7 @@ logging: &logging
   log_use_gzip: False #  Use gzip to compress rotated logs
   log_syslog: False # If True, outputs to SysLog host and port specified
   log_syslog_host: "localhost" # Send logging messages to a remote or local Unix syslog
-  log_syslog_port: 28891 # UDP port of the remote or local Unix syslog
+  log_syslog_port: 514 # UDP port of the remote or local Unix syslog
 
 seeder:
   # The fake full node used for crawling will run on this port.
@@ -115,11 +114,9 @@ seeder:
       private_key: "config/ssl/crawler/private_crawler.key"
 
 harvester:
-  # The harvester server (if run) will run on this port
-  port: 22884
-  farmer_peer:
-    host: *self_hostname
-    port: 22886
+  farmer_peers:
+    - host: *self_hostname
+      port: 22886
 
   # If True, starts an RPC server at the following port
   start_rpc_server: True
@@ -178,13 +175,10 @@ pool:
 farmer:
   # The farmer server (if run) will run on this port
   port: 22886
-  # The farmer will attempt to connect to this full node and harvester
-  full_node_peer:
-    host: *self_hostname
-    port: 22888
-  harvester_peer:
-    host: *self_hostname
-    port: 22884
+  # The farmer will attempt to connect to these full nodes
+  full_node_peers:
+    - host: *self_hostname
+      port: 22888
 
   pool_public_keys: []
 
@@ -217,8 +211,6 @@ timelord_launcher:
   logging: *logging
 
 timelord:
-  # The timelord server (if run) will run on this port
-  port: 22880
   # Provides a list of VDF clients expected to connect to this timelord.
   # For each client, an IP is provided, together with the estimated iterations per second.
   vdf_clients:
@@ -228,9 +220,9 @@ timelord:
       - 127.0.0.1
     ips_estimate:
       - 150000
-  full_node_peer:
-    host: *self_hostname
-    port: 22888
+  full_node_peers:
+    - host: *self_hostname
+      port: 22888
   # Maximum number of seconds allowed for a client to reconnect to the server.
   max_connection_time: 60
   # The ip and port where the TCP clients will connect.
@@ -332,7 +324,7 @@ full_node:
   # How long to wait for a peer connection
   peer_connect_timeout: 30
   # Accept peers until this number of connections
-  target_peer_count: 80
+  target_peer_count: 40
   # Initiate outbound connections until this number is hit.
   target_outbound_peer_count: 8
   # IPv4/IPv6 network addresses and CIDR blocks allowed to connect even when target_peer_count has been hit.
@@ -355,6 +347,10 @@ full_node:
   sanitize_weight_proof_only: False
   # timeout for weight proof request
   weight_proof_timeout: &weight_proof_timeout 360
+
+  # when the full node enters sync-mode, we wait until we have collected peaks
+  # from at least 3 peers, or until we've waitied this many seconds
+  max_sync_wait: 30
 
   # when enabled, the full node will print a pstats profile to the root_dir/profile every second
   # analyze with xxch/utils/profiler.py
@@ -384,19 +380,10 @@ full_node:
   # If you modify this, please change the hardcode as well from FullNode.set_server()
   dns_servers: &dns_servers
     - "dns-introducer.xxch.cc"
-  farmer_peer:
-    host: *self_hostname
-    port: 22886
-  timelord_peer:
-    host: *self_hostname
-    port: 22880
   introducer_peer:
     host: introducer.xxch.cc # Xxch AWS introducer IPv4/IPv6
     port: 22888
     enable_private_networks: False
-  wallet_peer:
-    host: *self_hostname
-    port: 22882
   logging: *logging
   network_overrides: *network_overrides
   selected_network: *selected_network
@@ -413,9 +400,6 @@ full_node:
   use_xxch_loop_policy: True
 
 ui:
-  # The ui node server (if run) will run on this port
-  port: 28871
-
   # Which port to use to communicate with the full node
   rpc_port: 22889
 
@@ -449,7 +433,6 @@ introducer:
     public_key: "config/ssl/full_node/public_full_node.key"
 
 wallet:
-  port: 22882
   rpc_port: 22883
 
   enable_profiler: False
@@ -473,9 +456,9 @@ wallet:
 
   dns_servers: *dns_servers
 
-  full_node_peer:
-    host: *self_hostname
-    port: 22888
+  full_node_peers:
+    - host: *self_hostname
+      port: 22888
   # The path of NFT off-chain metadata cache
   nft_metadata_cache_path: "nft_cache"
   # The length of NFT ID prefix will be used as hash index
@@ -497,7 +480,7 @@ wallet:
   network_overrides: *network_overrides
   selected_network: *selected_network
 
-  target_peer_count: 3
+  target_peer_count: 10
   peer_connect_interval: 60
   # The introducer will only return peers who it has seen in the last
   # recent_peer_threshold seconds
@@ -565,15 +548,13 @@ wallet:
     batch_size: 50
 
   auto_withdraw_stake:
+    enabled: False
     tx_fee: 0
     batch_size: 50
 
 data_layer:
   # TODO: consider name
   # TODO: organize consistently with other sections
-
-  # TODO: shouldn't we not need this since we have no actual public interface (yet)?
-  port: 22877
   wallet_peer:
     host: localhost
     port: 22883

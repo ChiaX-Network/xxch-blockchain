@@ -9,6 +9,7 @@ from xxch import __version__
 from xxch.cmds.beta import beta_cmd
 from xxch.cmds.completion import completion
 from xxch.cmds.configure import configure_cmd
+from xxch.cmds.dao import dao_cmd
 from xxch.cmds.data import data_cmd
 from xxch.cmds.db import db_cmd
 from xxch.cmds.dev import dev_cmd
@@ -130,6 +131,7 @@ cli.add_command(data_cmd)
 cli.add_command(passphrase_cmd)
 cli.add_command(beta_cmd)
 cli.add_command(completion)
+cli.add_command(dao_cmd)
 cli.add_command(dev_cmd)
 
 

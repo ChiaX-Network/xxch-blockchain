@@ -45,7 +45,7 @@ def create_full_node_crawler_service(
 
     rpc_info: Optional[RpcInfo] = None
     if crawler_config.get("start_rpc_server", True):
-        rpc_info = (CrawlerRpcApi, crawler_config.get("rpc_port", 8561))
+        rpc_info = (CrawlerRpcApi, crawler_config.get("rpc_port", 22877))
 
     return Service(
         root_path=root_path,

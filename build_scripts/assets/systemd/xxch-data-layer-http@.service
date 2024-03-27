@@ -1,0 +1,17 @@
+[Unit]
+Description=Xxch Data Layer HTTP Service for %i
+Requires=xxch-daemon@%i.service
+After=xxch-daemon@%i.service
+
+[Service]
+Type=simple
+Environment=XXCH_ROOT=/home/%i/.xxch/mainnet
+ExecStart=/opt/xxch/xxch_data_layer_http
+User=%i
+Group=%i
+LimitNOFILE=1048576
+LimitNPROC=1048576
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -189,7 +189,7 @@ class Err(Enum):
     CHIP_0013_VALIDATION = 145
 
     INVALID_STAKE_COEFFICIENT = 245
-    INVALID_COMMUNITY_PUZZLE_HASH = 246
+
 
 class ValidationError(Exception):
     def __init__(self, code: Err, error_msg: str = ""):

@@ -59,7 +59,6 @@ def calculate_iterations_quality(
     times a random number between 0 and 1 (based on quality string), divided by plot size.
     """
     sp_quality_string: bytes32 = std_hash(quality_string + cc_sp_output_hash)
-
     iters = uint64(
         int(int(difficulty) * int(difficulty_constant_factor) * (stake_coefficient / STAKE_PER_COEFFICIENT))
         * int.from_bytes(sp_quality_string, "big", signed=False)

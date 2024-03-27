@@ -5,6 +5,7 @@ from typing import Optional
 
 import click
 
+from xxch.cmds import options
 from xxch.wallet.transaction_sorting import SortKey
 
 
@@ -131,7 +132,7 @@ def get_transactions_cmd(
     sys.stdout.close()
 
 
-@stake_cmd.command("send", short_help="Send xxch to stake stake-hash")
+@stake_cmd.command("send", short_help="Send xxch to stake")
 @click.option(
     "-wp",
     "--wallet-rpc-port",
@@ -171,51 +172,54 @@ def stake_send_cmd(
             wallet_rpc_port=wallet_rpc_port,
             fp=fingerprint,
             wallet_id=id,
-            stake_type=stake_type,
-            stake_category=stake_category,
-            address=address,
             amount=amount,
             fee=Decimal(fee),
+            address=address,
+            stake_type=stake_type,
+            stake_category=stake_category,
         )
     )
 
 
-# @stake_cmd.command(
-#     "withdraw",
-#     help="withdraw a Stake transaction."
-#     " The wallet will automatically detect if you are able to withdraw.",
-# )
-# @click.option(
-#     "-wp",
-#     "--wallet-rpc-port",
-#     help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
-#     type=int,
-#     default=None,
-# )
-# # TODO: Remove unused wallet id option
-# @click.option("-i", "--id", help="Id of the wallet to use", type=int, default=1, show_default=True, required=True)
-# @click.option("-f", "--fingerprint", help="Set the fingerprint to specify which key to use", type=int)
-# @click.option(
-#     "-ids",
-#     "--tx_ids",
-#     help="IDs of the Stake transactions you want to withdraw. Separate multiple IDs by comma (,).",
-#     type=str,
-#     default="",
-#     required=True,
-# )
-# @click.option(
-#     "-m", "--fee", help="A fee to add to the offer when it gets taken, in XXCH", default="0", show_default=True
-# )
-# def stake_withdraw_cmd(
-#     wallet_rpc_port: Optional[int], id: int, fingerprint: int, tx_ids: str, fee: str
-# ) -> None:  # pragma: no cover
-#     from .stake_funcs import spend_stake_coins
-#
-#     asyncio.run(
-#         spend_stake_coins(
-#             wallet_rpc_port=wallet_rpc_port,
-#             fp=fingerprint,
-#             fee=Decimal(fee),
-#             tx_ids_str=tx_ids,
-#         )
-#     )
+@stake_cmd.command(
+    "withdraw",
+    help="withdraw stake transaction."
+    " The wallet will automatically detect if you are able to revert or claim.",
+)
+@click.option(
+    "-wp",
+    "--wallet-rpc-port",
+    help="Set the port where the Wallet is hosting the RPC interface. See the rpc_port under wallet in config.yaml",
+    type=int,
+    default=None,
+)
+# TODO: Remove unused wallet id option
+@click.option("-i", "--id", help="Id of the wallet to use", type=int, default=1, show_default=True, required=True)
+@options.create_fingerprint()
+@click.option(
+    "-ids",
+    "--tx_ids",
+    help="IDs of the stake transactions you want to withdraw. Separate multiple IDs by comma (,).",
+    type=str,
+    default="",
+    required=True,
+)
+@click.option(
+    "-m", "--fee", help="A fee to add to the offer when it gets taken, in XXCH", default="0.1", show_default=True
+)
+@click.option(
+    "--force",
+    help="Force to push the spend bundle even it may be a double spend",
+    is_flag=True,
+    default=False,
+)
+def withdraw(
+    wallet_rpc_port: Optional[int], id: int, fingerprint: int, tx_ids: str, fee: str, force: bool
+) -> None:  # pragma: no cover
+    from .stake_funcs import spend_withdraw
+
+    asyncio.run(
+        spend_withdraw(
+            wallet_rpc_port=wallet_rpc_port, fp=fingerprint, fee=Decimal(fee), tx_ids_str=tx_ids, force=force
+        )
+    )

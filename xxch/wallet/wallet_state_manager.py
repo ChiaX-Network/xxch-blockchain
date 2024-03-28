@@ -30,6 +30,7 @@ from xxch.consensus.block_rewards import (
     calculate_base_farmer_reward,
     calculate_pool_reward,
     calculate_stake_farm_reward,
+    MOJO_PER_XXCH,
 )
 from xxch.consensus.coinbase import (
     farmer_parent_id,
@@ -2766,6 +2767,9 @@ class WalletStateManager:
         extra_conditions: Tuple[Condition, ...] = tuple(),
     ) -> List[bytes32]:
         assert len(stake_coins) > 0
+        min_fee= uint64(int(0.1 * MOJO_PER_XXCH))
+        if fee < min_fee:
+            fee = min_fee
         coin_spends: List[CoinSpend] = []
         message: bytes32 = std_hash(b"".join([c.name() for c in stake_coins.keys()]))
         now: uint64 = uint64(int(time.time()))

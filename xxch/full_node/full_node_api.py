@@ -15,7 +15,6 @@ from chiabip158 import PyBIP158
 
 from xxch.consensus.block_creation import create_unfinished_block
 from xxch.consensus.block_record import BlockRecord
-from xxch.consensus.block_rewards import STAKE_FORK_HEIGHT
 from xxch.consensus.blockchain import BlockchainMutexPriority
 from xxch.consensus.pot_iterations import calculate_ip_iters, calculate_iterations_quality, calculate_sp_iters
 from xxch.full_node.bundle_tools import (
@@ -913,7 +912,7 @@ class FullNodeAPI:
             self.log.info("Starting to make the unfinished block")
             stake_farm_records_dict: Optional[Dict[bytes32, Dict[bytes32, int]]] = None
             stake_lock_records: Optional[Dict[bytes32, int]] = None
-            if peak is not None and peak.height >= STAKE_FORK_HEIGHT and prev_b is not None:
+            if peak is not None and prev_b is not None:
                 res = get_prev_transaction_block(
                     prev_b, self.full_node.blockchain, uint128(total_iters_pos_slot + sp_iters)
                 )

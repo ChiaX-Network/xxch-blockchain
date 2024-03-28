@@ -4613,6 +4613,13 @@ class WalletRpcApi:
     ##########################################################################################
 
     async def set_auto_withdraw_stake(self, request) -> EndpointResult:
+        if str2bool(request.get("enabled", False)):
+            tx_fee: uint64 = uint64(request.get("tx_fee", 0))
+            if tx_fee < int(0.1 * MOJO_PER_XXCH):
+                return {
+                    "success": False,
+                    "error": f"withdraw fee must >= 0.1",
+                }
         return self.service.set_auto_withdraw_stake(AutoWithdrawStakeSettings.from_json_dict(request))
 
     async def get_auto_withdraw_stake(self, request) -> EndpointResult:

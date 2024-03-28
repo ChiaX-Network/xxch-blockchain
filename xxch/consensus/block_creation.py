@@ -179,58 +179,59 @@ def create_foliage(
 
             assert curr.fees is not None
             assert curr.header_hash == prev_transaction_block.header_hash
-            pool_reward = calculate_pool_reward(prev_transaction_block.height)
+            curr_height = curr.height
+            pool_reward = calculate_pool_reward(curr_height)
             if pool_reward > 0:
                 reward_claims_incorporated.append(create_pool_coin(
-                    prev_transaction_block.height,
-                    prev_transaction_block.pool_puzzle_hash,
-                    calculate_pool_reward(prev_transaction_block.height),
+                    curr_height,
+                    curr.pool_puzzle_hash,
+                    calculate_pool_reward(curr_height),
                     constants.GENESIS_CHALLENGE,
                 ))
 
-            if prev_transaction_block.height >= STAKE_FORK_HEIGHT:
+            if curr_height >= STAKE_FORK_HEIGHT:
                 reward_claims_incorporated.append(create_farmer_coin(
-                    prev_transaction_block.height,
-                    prev_transaction_block.farmer_puzzle_hash,
-                    calculate_base_farmer_reward(prev_transaction_block.height),
+                    curr_height,
+                    curr.farmer_puzzle_hash,
+                    calculate_base_farmer_reward(curr_height),
                     constants.GENESIS_CHALLENGE,
                 ))
-                if prev_transaction_block.fees > 0:
+                if curr.fees > 0:
                     reward_claims_incorporated.append(create_fee_coin(
-                        prev_transaction_block.height,
+                        curr_height,
                         constants.FEES_PUZZLE_HASH,
-                        prev_transaction_block.fees,
+                        curr.fees,
                         constants.GENESIS_CHALLENGE,
                     ))
-                if prev_transaction_block.height % 1000 == 0:
+                if curr_height % 1000 == 0:
                     reward_claims_incorporated.append(
                         create_community_coin(
-                            prev_transaction_block.height,
+                            curr_height,
                             constants.GENESIS_COMMUNITY_PUZZLE_HASH,
-                            calculate_community_reward(prev_transaction_block.height),
+                            calculate_community_reward(curr_height),
                             constants.GENESIS_CHALLENGE,
                         )
                     )
             else:
                 reward_claims_incorporated.append(create_farmer_coin(
-                    prev_transaction_block.height,
-                    prev_transaction_block.farmer_puzzle_hash,
-                    uint64(calculate_base_farmer_reward(prev_transaction_block.height) + prev_transaction_block.fees),
+                    curr_height,
+                    curr.farmer_puzzle_hash,
+                    uint64(calculate_base_farmer_reward(curr_height) + curr.fees),
                     constants.GENESIS_CHALLENGE,
                 ))
                 reward_claims_incorporated.append(
                     create_community_coin(
-                        prev_transaction_block.height,
+                        curr_height,
                         constants.GENESIS_COMMUNITY_PUZZLE_HASH,
-                        calculate_community_reward(prev_transaction_block.height),
+                        calculate_community_reward(curr_height),
                         constants.GENESIS_CHALLENGE,
                     )
                 )
 
-            stake_records = stake_farm_records_dict.get(prev_transaction_block.header_hash)
+            stake_records = stake_farm_records_dict.get(curr.header_hash)
             if stake_records is not None and len(stake_records) > 0:
                 reward_claims_incorporated += create_stake_farm_rewards(
-                    constants, stake_records, prev_transaction_block.height
+                    constants, stake_records, curr_height
                 )
 
             if curr.height > 0:
@@ -281,7 +282,7 @@ def create_foliage(
 
                 if len(stake_lock_records) > 0:
                     reward_claims_incorporated += create_stake_lock_rewards(
-                        constants, stake_lock_records, prev_transaction_block.height
+                        constants, stake_lock_records, curr_height
                     )
 
         additions.extend(reward_claims_incorporated.copy())
